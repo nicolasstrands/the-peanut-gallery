@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "peanut-gallery-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-24",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "ReactionRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ReactionRoom"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "peanut-gallery",
+      "database_id": "a08e87f6-a7b9-4aa7-95b2-dda8dbeb85a5",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

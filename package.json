@@ -1,0 +1,22 @@
+{
+  "name": "peanut-gallery",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:realtime": "pnpm --filter realtime dev",
+    "deploy:realtime": "pnpm --filter realtime run deploy",
+    "build": "turbo build",
+    "build:web": "pnpm --filter web build",
+    "deploy:web": "pnpm --filter web run deploy",
+    "build:macos": "swift build --package-path apps/macos-overlay",
+    "run:macos": "swift run --package-path apps/macos-overlay",
+    "package:macos": "bash scripts/package-macos.sh",
+    "clean:macos": "swift package --package-path apps/macos-overlay clean",
+    "lint": "turbo lint",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4"
+  }
+}

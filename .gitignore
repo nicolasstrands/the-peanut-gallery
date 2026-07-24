@@ -1,0 +1,47 @@
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+
+# Nuxt/Nitro/Turbo/build output
+.nuxt/
+.output/
+.turbo/
+dist/
+
+# Cloudflare Wrangler local state
+.wrangler/
+dev.vars
+dev.vars.*
+!.dev.vars.example
+
+# Environment files and local configuration
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+# Swift Package Manager and Xcode state
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+*.dSYM/
+
+# Local app archives/artifacts
+*.app/
+*.zip
+
+# Credentials, certificates, and signing material
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+credentials*.json
+service-account*.json
+
+# macOS metadata
+.DS_Store

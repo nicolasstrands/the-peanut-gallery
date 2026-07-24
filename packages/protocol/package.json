@@ -1,0 +1,8 @@
+{
+  "name": "@peanut-gallery/protocol",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "lint": "tsc --noEmit", "test": "echo 'No protocol tests yet'" },
+  "devDependencies": { "typescript": "^5.8.0" }
+}

@@ -1,0 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Balsamiq+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Rammetto+One&display=block");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Balsamiq Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Rammetto One", ui-sans-serif, system-ui, sans-serif;
+  --color-peanut-gallery: #f6b73c;
+}
+
+@layer base {
+  body,
+  p,
+  input,
+  button,
+  a {
+    font-family: var(--font-sans);
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+
+  .gallery-title-shared {
+    view-transition-name: gallery-title;
+  }
+
+  ::view-transition-group(gallery-title) {
+    animation-duration: 420ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  ::view-transition-old(gallery-title),
+  ::view-transition-new(gallery-title) {
+    animation-duration: 420ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
