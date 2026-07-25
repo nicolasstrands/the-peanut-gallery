@@ -207,13 +207,12 @@
     transition: all 0.1s ease-in-out;
     aspect-ratio: 1;
     border: 1px solid #3b3028;
-    border-bottom-width: 8px;
+    border-bottom-width: 6px;
     border-radius: 18px;
     background: #241e1a;
     font-size: 42px;
     cursor: pointer;
-    max-width: 70px;
-    max-height: 70px;
+    @apply max-w-17.5 max-h-17.5 md:max-w-20 md:max-h-20;
     transition:
       transform 0.1s,
       background 0.1s;
@@ -229,8 +228,7 @@
   .custom-reaction-slot {
     position: relative;
     aspect-ratio: 1;
-    max-width: 70px;
-    max-height: 70px;
+    @apply max-w-17.5 max-h-17.5 md:max-w-20 md:max-h-20;
   }
   .custom-reaction {
     width: 100%;
