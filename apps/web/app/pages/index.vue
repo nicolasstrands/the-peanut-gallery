@@ -4,6 +4,15 @@
     description:
       "Create a live reaction room in seconds and let your audience send emoji to your screen in real time.",
   });
+  const isHomeHeroMounted = useState<boolean>("home-hero-mounted", () => false);
+
+  onMounted(() => {
+    isHomeHeroMounted.value = true;
+  });
+
+  onBeforeUnmount(() => {
+    isHomeHeroMounted.value = false;
+  });
 </script>
 
 <template>
@@ -44,7 +53,7 @@
     @apply text-xs font-extrabold uppercase tracking-[0.18em] text-peanut-gallery;
   }
   h1 {
-    @apply my-6 font-display text-7xl leading-[0.95] tracking-[-0.06em] text-center;
+    @apply my-6 font-display text-3xl md:text-7xl leading-[0.95] tracking-[-0.06em] text-center;
   }
   h1 span {
     @apply text-peanut-gallery;

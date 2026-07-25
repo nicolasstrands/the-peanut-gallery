@@ -33,7 +33,7 @@
 
 <template>
   <section>
-    <h1>Your room is live.</h1>
+    <h1>Your room <wbr />is live.</h1>
     <p>Anyone scanning this QR code can open the reaction deck instantly.</p>
 
     <div class="card" v-if="roomId && qrUrl">
@@ -102,7 +102,7 @@
     @apply w-70 h-auto rounded-lg bg-white border-white border-20 mx-auto;
   }
   h1 {
-    @apply text-5xl;
+    @apply text-3xl md:text-5xl;
     letter-spacing: -0.06em;
     margin: 16px 0 8px;
   }

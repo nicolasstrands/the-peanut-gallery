@@ -158,6 +158,7 @@
 </template>
 
 <style scoped>
+  @reference "../../assets/css/main.css";
   .eyebrow {
     color: #f6b73c;
     text-transform: uppercase;
@@ -166,7 +167,7 @@
     font-weight: 800;
   }
   h1 {
-    font-size: 52px;
+    @apply text-3xl md:text-5xl;
     letter-spacing: -0.06em;
     margin: 16px 0 8px;
   }
@@ -211,6 +212,8 @@
     background: #241e1a;
     font-size: 42px;
     cursor: pointer;
+    max-width: 70px;
+    max-height: 70px;
     transition:
       transform 0.1s,
       background 0.1s;
@@ -226,6 +229,8 @@
   .custom-reaction-slot {
     position: relative;
     aspect-ratio: 1;
+    max-width: 70px;
+    max-height: 70px;
   }
   .custom-reaction {
     width: 100%;

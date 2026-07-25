@@ -1,10 +1,10 @@
 <script setup lang="ts">
-  const route = useRoute();
+  const isHomeHeroMounted = useState<boolean>("home-hero-mounted", () => false);
 </script>
 
 <template>
   <header class="header-shell">
-    <NuxtLink v-if="route.path !== '/'" to="/" class="logo" view-transition>
+    <NuxtLink v-if="!isHomeHeroMounted" to="/" class="logo" view-transition>
       <h1>
         <span
           class="title-letters gallery-title-shared"

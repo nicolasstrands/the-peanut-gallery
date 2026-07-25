@@ -48,3 +48,25 @@ Set `NUXT_PUBLIC_REALTIME_URL` to override it for local development or another d
 ## Cloudflare setup
 
 Create a D1 database and configure the IDs in `apps/realtime/wrangler.jsonc`. Deploy with `wrangler deploy` from `apps/realtime`.
+
+## GitHub Actions
+
+The repository includes three workflows under `.github/workflows/`:
+
+- `deploy-realtime.yml` deploys the realtime Worker when relevant changes land on `main`.
+- `deploy-web.yml` builds and deploys the Nuxt app when relevant changes land on `main`.
+- `macos-release.yml` packages the unsigned macOS app and publishes it to a GitHub Release for tags such as `v0.1.0`.
+
+Create a GitHub Actions environment named `production`, then add these environment secrets:
+
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+```
+
+The Cloudflare token should be scoped to the account and have permission to deploy Workers. macOS releases are currently unsigned and do not require Apple credentials. To publish one:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
