@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .connected: title = "Connection: Connected"
         case .reconnecting: title = "Connection: Reconnecting…"
         case .disconnected: title = "Connection: Disconnected"
+        case .unconfigured: title = "Connection: No server configured"
         }
         connectionMenuItem?.title = title
         updateStatusIcon(active: overlayController.isVisible)
@@ -145,6 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             color = .systemRed
         case .connecting, .reconnecting:
             color = .systemOrange
+        case .unconfigured:
+            color = .systemGray
         }
         statusItem.button?.image = nil
         statusItem.button?.attributedTitle = NSAttributedString(
