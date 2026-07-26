@@ -9,7 +9,11 @@ enum ReactionConnectionState {
     case unconfigured
 }
 
-struct ReactionMessage: Decodable { let type: String; let emoji: String? }
+struct ReactionMessage: Decodable {
+    let type: String
+    let emoji: String?
+    let counts: [String: Int]?
+}
 
 final class ReactionSocket {
     private var task: URLSessionWebSocketTask?
@@ -20,11 +24,17 @@ final class ReactionSocket {
     private var stopping = false
 
     private let onReaction: (String) -> Void
+    private let onLeaderboard: ([String: Int]) -> Void
     private let onStateChange: (ReactionConnectionState) -> Void
     private let session = URLSession(configuration: .default)
 
-    init(onReaction: @escaping (String) -> Void, onStateChange: @escaping (ReactionConnectionState) -> Void) {
+    init(
+        onReaction: @escaping (String) -> Void,
+        onLeaderboard: @escaping ([String: Int]) -> Void,
+        onStateChange: @escaping (ReactionConnectionState) -> Void
+    ) {
         self.onReaction = onReaction
+        self.onLeaderboard = onLeaderboard
         self.onStateChange = onStateChange
     }
 
@@ -69,8 +79,23 @@ final class ReactionSocket {
         let connection = session.webSocketTask(with: url)
         task = connection
         connection.resume()
+        sendJoinMessage(room: room, on: connection)
         startPingTimer(for: connection)
         listen(on: connection)
+    }
+
+    private func sendJoinMessage(room: String, on connection: URLSessionWebSocketTask) {
+        let payload: [String: String] = [
+            "type": "join-room",
+            "roomId": room,
+            "clientType": "macos"
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let text = String(data: data, encoding: .utf8) else { return }
+        connection.send(.string(text)) { [weak self, weak connection] error in
+            guard let self, let connection, self.task === connection, error != nil else { return }
+            self.connectionDidEnd(connection)
+        }
     }
 
     private func listen(on connection: URLSessionWebSocketTask) {
@@ -84,6 +109,11 @@ final class ReactionSocket {
                    let message = try? JSONDecoder().decode(ReactionMessage.self, from: data),
                    message.type == "reaction", let emoji = message.emoji {
                     self.onReaction(emoji)
+                }
+                if let data = text.data(using: .utf8),
+                   let message = try? JSONDecoder().decode(ReactionMessage.self, from: data),
+                   message.type == "leaderboard", let counts = message.counts {
+                    self.onLeaderboard(counts)
                 }
                 self.listen(on: connection)
             case .success(.data):

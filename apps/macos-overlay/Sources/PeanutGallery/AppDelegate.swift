@@ -4,20 +4,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let roomDefaultsKey = "peanutGallery.roomID"
     private var statusItem: NSStatusItem!
     private var overlayController: OverlayController!
+    private var leaderboardController: LeaderboardController!
     private var socket: ReactionSocket!
     private var statusMenuItem: NSMenuItem!
     private var connectionMenuItem: NSMenuItem!
     private var serverMenuItem: NSMenuItem!
     private var roomMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
+    private var leaderboardToggleMenuItem: NSMenuItem!
     private var connectionState: ReactionConnectionState = .disconnected
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         overlayController = OverlayController()
         overlayController.show()
+        leaderboardController = LeaderboardController()
+        leaderboardController.show()
         socket = ReactionSocket(onReaction: { [weak self] emoji in
             DispatchQueue.main.async { self?.overlayController.add(emoji: emoji) }
+        }, onLeaderboard: { [weak self] counts in
+            DispatchQueue.main.async { self?.leaderboardController.update(counts: counts) }
         }, onStateChange: { [weak self] state in
             DispatchQueue.main.async { self?.updateConnectionStatus(state) }
         })
@@ -50,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleMenuItem = NSMenuItem(title: "Hide Overlay", action: #selector(toggleOverlay), keyEquivalent: "h")
         toggleMenuItem.target = self
         menu.addItem(toggleMenuItem)
+        leaderboardToggleMenuItem = NSMenuItem(title: "Hide Leaderboard", action: #selector(toggleLeaderboard), keyEquivalent: "l")
+        leaderboardToggleMenuItem.target = self
+        menu.addItem(leaderboardToggleMenuItem)
         menu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit Peanut Gallery", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -94,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         field.isSelectable = true
         field.usesSingleLineMode = true
         field.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
+        field.menu = editingMenu()
         alert.accessoryView = field
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -114,6 +124,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             updateConnectionStatus(.disconnected)
         }
+    }
+
+    private func editingMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        menu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        return menu
     }
 
     private func updateServerMenuItem() {
@@ -226,6 +245,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon(active: active)
         statusMenuItem.title = active ? "Status: Active" : "Status: Paused"
         toggleMenuItem.title = active ? "Hide Overlay" : "Show Overlay"
+    }
+
+    @objc private func toggleLeaderboard() {
+        leaderboardController.toggle()
+        leaderboardToggleMenuItem.title = leaderboardController.isVisible ? "Hide Leaderboard" : "Show Leaderboard"
     }
 
     private func updateStatusIcon(active: Bool) {

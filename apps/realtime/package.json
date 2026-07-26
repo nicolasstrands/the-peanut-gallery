@@ -2,6 +2,9 @@
   "name": "realtime",
   "private": true,
   "type": "module",
+  "dependencies": {
+    "@peanut-gallery/protocol": "workspace:*"
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
