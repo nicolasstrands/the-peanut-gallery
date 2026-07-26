@@ -95,3 +95,9 @@ The Cloudflare token should be scoped to the account and have permission to depl
 git tag v0.1.0
 git push origin v0.1.0
 ```
+
+Because the macOS app is currently unsigned and un-notarized, Gatekeeper may block it on first launch. After unzipping the release artifact, run:
+
+```bash
+xattr -dr com.apple.quarantine PeanutGallery.app
+```
