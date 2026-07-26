@@ -5,6 +5,8 @@ enum ReactionConnectionState {
     case connecting
     case connected
     case reconnecting
+    /// No realtime server has been configured yet, so there is nothing to dial.
+    case unconfigured
 }
 
 struct ReactionMessage: Decodable { let type: String; let emoji: String? }
@@ -49,9 +51,17 @@ final class ReactionSocket {
         guard !stopping, let room else { return }
         stopPingTimer()
         task?.cancel(with: .goingAway, reason: nil)
+
+        // Nothing to dial until a server is configured. Retrying on a timer would
+        // only burn cycles: saving a server calls connect(room:) again.
+        guard let base = RealtimeSettings.resolvedURL else {
+            notify(.unconfigured)
+            return
+        }
+
         notify(reconnectAttempt == 0 ? .connecting : .reconnecting)
 
-        guard let url = URL(string: "wss://gallerybutter.arcodelabs.com/rooms/\(room)") else {
+        guard let url = URL(string: "\(base)/rooms/\(room)") else {
             scheduleReconnect()
             return
         }

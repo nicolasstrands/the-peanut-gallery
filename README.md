@@ -49,6 +49,31 @@ Set `NUXT_PUBLIC_REALTIME_URL` to override it for local development or another d
 
 Create a D1 database and configure the IDs in `apps/realtime/wrangler.jsonc`. Deploy with `wrangler deploy` from `apps/realtime`.
 
+## macOS overlay
+
+The overlay has no endpoint compiled into it. It asks for a realtime server on
+first launch, and the same dialog stays available from the menu bar under **Set
+Realtime Server…**, so one machine can point at any deployment without a rebuild.
+
+Paste either the `wss://` endpoint or the `https://` URL Wrangler prints on
+deploy — the scheme is normalised for you. Bare hosts (`my-worker.example.workers.dev`)
+and `localhost:8787` work too, the latter defaulting to `ws://` rather than `wss://`.
+
+The address is stored in `UserDefaults` under `peanutGallery.realtimeURL`. Saving
+a new server reconnects the current room immediately. The menu bar shows the
+active server and connection state, abbreviating `workers.dev` addresses to their
+account subdomain to keep the menu narrow; the full address is in the dialog.
+
+For local development, an environment variable takes precedence over the saved
+value:
+
+```bash
+PEANUT_GALLERY_REALTIME_URL=ws://localhost:8787 pnpm run:macos
+```
+
+While it is set the dialog is read-only and says the environment is in control,
+rather than silently discarding what you type.
+
 ## GitHub Actions
 
 The repository includes three workflows under `.github/workflows/`:

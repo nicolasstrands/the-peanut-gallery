@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var socket: ReactionSocket!
     private var statusMenuItem: NSMenuItem!
     private var connectionMenuItem: NSMenuItem!
+    private var serverMenuItem: NSMenuItem!
     private var roomMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
     private var connectionState: ReactionConnectionState = .disconnected
@@ -30,10 +31,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         connectionMenuItem = NSMenuItem(title: "Connection: Disconnected", action: nil, keyEquivalent: "")
         connectionMenuItem.isEnabled = false
         menu.addItem(connectionMenuItem)
+        serverMenuItem = NSMenuItem(title: "Server: Not configured", action: nil, keyEquivalent: "")
+        serverMenuItem.isEnabled = false
+        menu.addItem(serverMenuItem)
         roomMenuItem = NSMenuItem(title: "Room: None selected", action: nil, keyEquivalent: "")
         roomMenuItem.isEnabled = false
         menu.addItem(roomMenuItem)
         menu.addItem(.separator())
+        let serverItem = NSMenuItem(title: "Set Realtime Server…", action: #selector(configureServer), keyEquivalent: "s")
+        serverItem.target = self
+        menu.addItem(serverItem)
         let connectItem = NSMenuItem(title: "Connect to Room…", action: #selector(connectToRoom), keyEquivalent: "c")
         connectItem.target = self
         menu.addItem(connectItem)
@@ -48,13 +55,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
         statusItem.menu = menu
+        updateServerMenuItem()
 
-        if let savedRoom = UserDefaults.standard.string(forKey: roomDefaultsKey) {
+        if RealtimeSettings.resolvedURL == nil {
+            // First run: the overlay cannot do anything useful until it knows
+            // where to connect, so ask instead of failing silently.
+            updateConnectionStatus(.unconfigured)
+            DispatchQueue.main.async { [weak self] in self?.configureServer() }
+        } else if let savedRoom = UserDefaults.standard.string(forKey: roomDefaultsKey) {
             connect(to: savedRoom)
         }
     }
 
+    @objc private func configureServer() {
+        if RealtimeSettings.isOverriddenByEnvironment {
+            let alert = NSAlert()
+            alert.messageText = "Server set by the environment"
+            alert.informativeText = """
+                PEANUT_GALLERY_REALTIME_URL is set to \(RealtimeSettings.resolvedURL ?? ""), \
+                which overrides anything saved here. Unset it and relaunch to edit the server \
+                from this menu.
+                """
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Realtime server"
+        alert.informativeText = """
+            Paste the address of your Peanut Gallery realtime Worker.
+            """
+        alert.alertStyle = .informational
+        let field = NSTextField(string: RealtimeSettings.storedURL ?? "")
+        field.placeholderString = "wss://peanut-gallery-realtime.<subdomain>.workers.dev"
+        field.isEditable = true
+        field.isSelectable = true
+        field.usesSingleLineMode = true
+        field.frame = NSRect(x: 0, y: 0, width: 360, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let normalized = RealtimeSettings.normalized(field.stringValue) else {
+            showServerError()
+            return
+        }
+
+        RealtimeSettings.store(normalized)
+        updateServerMenuItem()
+
+        // Reconnect so the change takes effect without a relaunch.
+        if let room = UserDefaults.standard.string(forKey: roomDefaultsKey), !room.isEmpty {
+            connect(to: room)
+        } else {
+            updateConnectionStatus(.disconnected)
+        }
+    }
+
+    private func updateServerMenuItem() {
+        guard let url = RealtimeSettings.resolvedURL else {
+            serverMenuItem?.title = "Server: Not configured"
+            serverMenuItem?.toolTip = nil
+            return
+        }
+        let suffix = RealtimeSettings.isOverriddenByEnvironment ? " (from environment)" : ""
+        serverMenuItem?.title = "Server: \(RealtimeSettings.displayName(for: url))\(suffix)"
+        // The title is abbreviated, so keep the full address one hover away.
+        serverMenuItem?.toolTip = url
+    }
+
+    private func showServerError() {
+        let alert = NSAlert()
+        alert.messageText = "Invalid server address"
+        alert.informativeText = """
+            Enter a host or URL such as wss://peanut-gallery-realtime.example.workers.dev \
+            or ws://localhost:8787, without a query string.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @objc private func connectToRoom() {
+        // A room code is meaningless without a server, so collect that first.
+        if RealtimeSettings.resolvedURL == nil {
+            configureServer()
+            guard RealtimeSettings.resolvedURL != nil else { return }
+        }
+
         let alert = NSAlert()
         alert.messageText = "Connect to a room"
         alert.informativeText = "Enter the room code shared by the host."
@@ -123,6 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .connected: title = "Connection: Connected"
         case .reconnecting: title = "Connection: Reconnecting…"
         case .disconnected: title = "Connection: Disconnected"
+        case .unconfigured: title = "Connection: No server configured"
         }
         connectionMenuItem?.title = title
         updateStatusIcon(active: overlayController.isVisible)
@@ -145,6 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             color = .systemRed
         case .connecting, .reconnecting:
             color = .systemOrange
+        case .unconfigured:
+            color = .systemGray
         }
         statusItem.button?.image = nil
         statusItem.button?.attributedTitle = NSAttributedString(
