@@ -58,11 +58,21 @@ enum RealtimeSettings {
         return value
     }
 
-    /// Host[:port] label for the menu bar.
+    /// Short host[:port] label for the menu bar. A `workers.dev` address collapses
+    /// to its account subdomain: the worker name comes from wrangler.jsonc and is
+    /// the same for everyone, so the subdomain is the part that says whose
+    /// deployment this is. Every other host is left alone.
     static func displayName(for value: String) -> String {
         guard let url = URL(string: value), let host = url.host else { return value }
-        guard let port = url.port else { return host }
-        return "\(host):\(port)"
+        let label = shortenedHost(host)
+        guard let port = url.port else { return label }
+        return "\(label):\(port)"
+    }
+
+    private static func shortenedHost(_ host: String) -> String {
+        let labels = host.split(separator: ".").map(String.init)
+        guard labels.count > 3, Array(labels.suffix(2)) == ["workers", "dev"] else { return host }
+        return labels.suffix(3).joined(separator: ".")
     }
 
     private static func isLoopback(_ value: String) -> Bool {

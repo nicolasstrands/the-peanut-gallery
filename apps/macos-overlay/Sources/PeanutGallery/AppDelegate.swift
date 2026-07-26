@@ -119,10 +119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateServerMenuItem() {
         guard let url = RealtimeSettings.resolvedURL else {
             serverMenuItem?.title = "Server: Not configured"
+            serverMenuItem?.toolTip = nil
             return
         }
         let suffix = RealtimeSettings.isOverriddenByEnvironment ? " (from environment)" : ""
         serverMenuItem?.title = "Server: \(RealtimeSettings.displayName(for: url))\(suffix)"
+        // The title is abbreviated, so keep the full address one hover away.
+        serverMenuItem?.toolTip = url
     }
 
     private func showServerError() {
