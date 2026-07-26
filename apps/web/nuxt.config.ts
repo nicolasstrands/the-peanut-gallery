@@ -20,9 +20,7 @@ export default defineNuxtConfig({
   css: ["~/assets/css/main.css"],
   runtimeConfig: {
     public: {
-      realtimeUrl:
-        process.env.NUXT_PUBLIC_REALTIME_URL ||
-        "wss://gallerybutter.arcodelabs.com",
+      realtimeUrl: process.env.NUXT_PUBLIC_REALTIME_URL,
     },
   },
   nitro: {

@@ -37,17 +37,80 @@ Production URLs:
 - Web reaction deck: `https://peanutgallery.arcodelabs.com`
 - Realtime WebSocket: `wss://gallerybutter.arcodelabs.com`
 
-The current deployed realtime endpoint is:
-
-```text
-wss://gallerybutter.arcodelabs.com
-```
-
-Set `NUXT_PUBLIC_REALTIME_URL` to override it for local development or another deployment.
+Set `NUXT_PUBLIC_REALTIME_URL` to override the realtime endpoint for local development or another deployment.
 
 ## Cloudflare setup
 
-Create a D1 database and configure the IDs in `apps/realtime/wrangler.jsonc`. Deploy with `wrangler deploy` from `apps/realtime`.
+Everything runs on two Workers in a single Cloudflare account. The Workers free plan
+is enough: Durable Objects here use the SQLite backend, which is free-tier eligible.
+
+### 1. Authenticate
+
+```bash
+npx wrangler login
+```
+
+### 2. Create the D1 database
+
+```bash
+npx wrangler d1 create peanut-gallery
+```
+
+The binding in `apps/realtime/wrangler.jsonc` deliberately omits `database_id`,
+so Wrangler resolves it against your own account on deploy and no one's database
+ID has to live in the repository. The binding is declared but not yet read by the
+Worker — it exists so room persistence can be added without a config change.
+
+### 3. Deploy the realtime Worker
+
+```bash
+pnpm deploy:realtime
+```
+
+Wrangler prints the deployed URL, e.g.
+`https://peanut-gallery-realtime.<your-subdomain>.workers.dev`. The WebSocket
+endpoint is the same host with the `wss://` scheme.
+
+### 4. Point the web app at your realtime Worker
+
+Copy `apps/web/.env.example` to `apps/web/.env` and set that `wss://` URL:
+
+```bash
+NUXT_PUBLIC_REALTIME_URL=wss://peanut-gallery-realtime.<your-subdomain>.workers.dev
+```
+
+Nuxt reads `.env` at build time, and `.env` is gitignored, so your endpoint
+never reaches a versioned file. Point it at `ws://localhost:8787` to develop
+against a local `pnpm dev:realtime`.
+
+CI does not read `.env`. Set `NUXT_PUBLIC_REALTIME_URL` in the workflow
+environment, or the build falls back to the default in `nuxt.config.ts`.
+
+### 5. Deploy the web app
+
+```bash
+pnpm deploy:web
+```
+
+A first deploy to a fresh `workers.dev` subdomain can return `error code: 1042`
+for up to a minute while the route propagates. Retry before debugging.
+
+### 6. Point the macOS overlay at your realtime Worker
+
+Nothing to configure at build time — see [macOS overlay](#macos-overlay) below.
+
+### Custom domains (optional)
+
+With the zone on the same Cloudflare account, add a route in each Worker's
+config, then redeploy:
+
+```jsonc
+// apps/realtime/wrangler.jsonc
+"routes": [{ "pattern": "realtime.example.com", "custom_domain": true }]
+```
+
+Update `NUXT_PUBLIC_REALTIME_URL` to match, and set the new address in the
+overlay's **Set Realtime Server…** dialog.
 
 ## macOS overlay
 
