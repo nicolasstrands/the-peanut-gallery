@@ -7,6 +7,8 @@
 
   const roomId = ref("");
   const joinUrl = ref("");
+  const copied = ref(false);
+  let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   function generateRoomId(length = 6): string {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -19,6 +21,23 @@
   function regenerateRoom() {
     roomId.value = generateRoomId(6);
     joinUrl.value = `${window.location.origin}/join/${roomId.value}`;
+    copied.value = false;
+  }
+
+  async function copyRoomCode() {
+    if (!roomId.value) return;
+    try {
+      await navigator.clipboard.writeText(roomId.value);
+      copied.value = true;
+      if (copyFeedbackTimer) {
+        clearTimeout(copyFeedbackTimer);
+      }
+      copyFeedbackTimer = setTimeout(() => {
+        copied.value = false;
+      }, 1600);
+    } catch {
+      copied.value = false;
+    }
   }
 
   onMounted(() => {
@@ -41,22 +60,58 @@
       <p class="label">Room code</p>
       <div class="code-row">
         <p class="code">{{ roomId }}</p>
-        <button
-          type="button"
-          class="refresh"
-          @click="regenerateRoom"
-          aria-label="Regenerate room code"
-          title="Regenerate room code">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32m0 0V19m0-3.68h3.68M4 12a8 8 0 0 1 13.66-5.66L20 8.68m0 0V5m0 3.68h-3.68"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round" />
-          </svg>
-        </button>
+        <div class="actions-stack">
+          <button
+            type="button"
+            class="icon-button"
+            @click="copyRoomCode"
+            :aria-label="copied ? 'Room code copied' : 'Copy room code'"
+            :title="copied ? 'Copied' : 'Copy room code'">
+            <svg v-if="!copied" viewBox="0 0 24 24" aria-hidden="true">
+              <rect
+                x="9"
+                y="9"
+                width="10"
+                height="10"
+                rx="2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8" />
+              <path
+                d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M20 7 9 18l-5-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            @click="regenerateRoom"
+            aria-label="Regenerate room code"
+            title="Regenerate room code">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32m0 0V19m0-3.68h3.68M4 12a8 8 0 0 1 13.66-5.66L20 8.68m0 0V5m0 3.68h-3.68"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
       <NuxtLink :to="`/join/${roomId}`">Open deck on this device</NuxtLink>
     </div>
@@ -149,7 +204,13 @@
     gap: 12px;
     margin-top: 6px;
   }
-  .refresh {
+  .actions-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .icon-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -161,14 +222,14 @@
     color: #fff4df;
     cursor: pointer;
   }
-  .refresh:hover {
+  .icon-button:hover {
     border-color: #f6b73c;
   }
-  .refresh:focus-visible {
+  .icon-button:focus-visible {
     outline: 2px solid #f6b73c;
     outline-offset: 2px;
   }
-  .refresh svg {
+  .icon-button svg {
     width: 20px;
     height: 20px;
   }
