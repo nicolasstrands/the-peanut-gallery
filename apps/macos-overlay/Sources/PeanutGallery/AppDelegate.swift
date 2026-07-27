@@ -142,18 +142,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildSettingsController() {
         settingsController = SettingsWindowController()
 
-        settingsController.onServerChange = { [weak self] server in
+        settingsController.onSaveChanges = { [weak self] room, server in
             guard let self else { return }
-            RealtimeSettings.store(server)
-            self.updateServerMenuItem()
-            // Re-dial the same room against the new address, but only for a
-            // connection that was already live.
-            if self.connectionState.isLive, let room = self.savedRoom {
+
+            let wasLive = self.connectionState.isLive
+            let previousRoom = self.savedRoom
+            let previousServer = RealtimeSettings.resolvedURL
+
+            if let server, server != previousServer {
+                RealtimeSettings.store(server)
+                self.updateServerMenuItem()
+            }
+
+            let roomChanged = previousRoom != room
+            let serverChanged = server.map { $0 != previousServer } ?? false
+
+            if wasLive {
+                guard roomChanged || serverChanged else { return }
+                self.disconnect()
+                self.connect(to: room)
+            } else {
                 self.connect(to: room)
             }
         }
-        settingsController.onConnect = { [weak self] room in self?.connect(to: room) }
-        settingsController.onDisconnect = { [weak self] in self?.disconnect() }
         settingsController.onOverlayVisibilityChange = { [weak self] visible in
             self?.setOverlay(visible: visible)
         }

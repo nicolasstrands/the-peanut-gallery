@@ -105,7 +105,7 @@ final class LeaderboardPanel: NSPanel {
             .font: NSFont.boldSystemFont(ofSize: 16),
             .foregroundColor: NSColor(calibratedWhite: 0.98, alpha: 1)
         ]
-        NSString(string: "Room leaderboard").draw(
+        NSString(string: "Leaderboard").draw(
             at: NSPoint(x: 18, y: bounds.maxY - 34),
             withAttributes: titleAttributes
         )

@@ -10,6 +10,8 @@
   const customEmojiStorageKey = "peanut-gallery:custom-emoji";
   const sent = ref<string[]>([]);
   const customEmoji = ref("");
+  const emojiPattern =
+    /^\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)*$/u;
   const connectionState = ref<
     "connecting" | "connected" | "disconnected" | "error"
   >("connecting");
@@ -24,7 +26,11 @@
   let isUnmounted = false;
 
   onMounted(() => {
-    customEmoji.value = localStorage.getItem(customEmojiStorageKey) ?? "";
+    const storedEmoji = localStorage.getItem(customEmojiStorageKey) ?? "";
+    customEmoji.value = isSingleEmoji(storedEmoji) ? storedEmoji : "";
+    if (storedEmoji && !customEmoji.value) {
+      localStorage.removeItem(customEmojiStorageKey);
+    }
 
     if (!roomId.value) {
       connectionState.value = "error";
@@ -42,7 +48,11 @@
   });
 
   function connect() {
-    if (isUnmounted || socket.value?.readyState === WebSocket.OPEN || socket.value?.readyState === WebSocket.CONNECTING) {
+    if (
+      isUnmounted ||
+      socket.value?.readyState === WebSocket.OPEN ||
+      socket.value?.readyState === WebSocket.CONNECTING
+    ) {
       return;
     }
 
@@ -96,7 +106,8 @@
   function scheduleReconnect() {
     if (isUnmounted || reconnectTimer) return;
 
-    const delay = reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
+    const delay =
+      reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
     reconnectAttempt += 1;
     connectionState.value = "connecting";
     reconnectTimer = setTimeout(() => {
@@ -124,16 +135,25 @@
       return;
     }
 
-    const emoji = window.prompt("Enter a custom emoji")?.trim();
-    if (emoji) {
+    const emoji = window.prompt("Enter a custom emoji")?.trim() ?? "";
+    if (isSingleEmoji(emoji)) {
       customEmoji.value = emoji;
       localStorage.setItem(customEmojiStorageKey, emoji);
+      return;
+    }
+
+    if (emoji) {
+      window.alert("Only a single emoji is allowed.");
     }
   }
 
   function resetCustomReaction() {
     customEmoji.value = "";
     localStorage.removeItem(customEmojiStorageKey);
+  }
+
+  function isSingleEmoji(value: string) {
+    return emojiPattern.test(value);
   }
 </script>
 
@@ -250,6 +270,8 @@
     transition:
       transform 0.1s,
       background 0.1s;
+    -webkit-user-select: none;
+    user-select: none;
   }
   button:disabled {
     cursor: not-allowed;

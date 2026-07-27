@@ -3,15 +3,12 @@ import AppKit
 /// Every user-configurable value in one window, in place of the stack of
 /// single-purpose alerts the menu used to put up.
 ///
-/// Values apply as they are committed — the server on Return or focus loss, the
-/// overlay checkbox on click — which leaves one button to own the connection.
-/// Keeping "what is stored" separate from "am I connected" is what makes that
-/// button's label always true.
+/// The Save action validates and applies server/room together so connection
+/// updates can happen in one controlled step.
 final class SettingsWindowController: NSWindowController {
-    /// Only ever called with an address that survived normalisation.
-    var onServerChange: ((String) -> Void)?
-    var onConnect: ((String) -> Void)?
-    var onDisconnect: (() -> Void)?
+    /// Called with a normalized room code and, when editable, a normalized
+    /// server URL.
+    var onSaveChanges: ((_ room: String, _ server: String?) -> Void)?
     var onOverlayVisibilityChange: ((Bool) -> Void)?
 
     private let serverField = NSTextField()
@@ -20,7 +17,7 @@ final class SettingsWindowController: NSWindowController {
     private let roomNote = NSTextField(labelWithString: "")
     private let overlayCheckbox = NSButton(checkboxWithTitle: "Show reactions on screen", target: nil, action: nil)
     private let connectionLabel = NSTextField(labelWithString: "Disconnected")
-    private let primaryButton = NSButton(title: "Connect", target: nil, action: nil)
+    private let primaryButton = NSButton(title: "Save Changes", target: nil, action: nil)
 
     /// Notes sit in their own grid rows so they can collapse when empty;
     /// otherwise the blank rows leave uneven gaps between the fields.
@@ -28,9 +25,6 @@ final class SettingsWindowController: NSWindowController {
     private var roomNoteRow: NSGridRow?
 
     private var connection: ReactionConnectionState = .disconnected
-    /// Last address handed to `onServerChange`, so re-committing an unchanged
-    /// field does not tear down a working connection.
-    private var appliedServer: String?
     private var hasBeenPositioned = false
 
     private static let fieldWidth: CGFloat = 340
@@ -59,9 +53,9 @@ final class SettingsWindowController: NSWindowController {
         configure(serverField, placeholder: "wss://peanut-gallery-realtime.<subdomain>.workers.dev", width: Self.fieldWidth)
         configure(roomField, placeholder: "e.g. ABC123", width: 160)
         // Return in a field acts on that field rather than firing the window's
-        // default button, so Return on the server commits it instead of dialling.
+        // default button, so Return on the server just normalizes/validates it.
         serverField.target = self
-        serverField.action = #selector(commitServerAction)
+        serverField.action = #selector(validateServerAction)
         roomField.target = self
         roomField.action = #selector(primaryTapped)
 
@@ -165,7 +159,6 @@ final class SettingsWindowController: NSWindowController {
         let environmentControlled = RealtimeSettings.isOverriddenByEnvironment
         serverField.isEditable = !environmentControlled
         serverField.stringValue = (environmentControlled ? RealtimeSettings.resolvedURL : RealtimeSettings.storedURL) ?? ""
-        appliedServer = RealtimeSettings.resolvedURL
         setNote(serverNote, row: serverNoteRow, environmentControlled
             ? "Set by PEANUT_GALLERY_REALTIME_URL. Unset it and relaunch to edit this."
             : "")
@@ -211,8 +204,10 @@ final class SettingsWindowController: NSWindowController {
     /// The one action button, always named for what it is about to do.
     private func refreshPrimaryButton() {
         let hasRoom = !roomField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        primaryButton.title = connection.isLive ? "Disconnect" : "Connect"
-        primaryButton.isEnabled = connection.isLive || hasRoom
+        let hasServer = RealtimeSettings.isOverriddenByEnvironment
+            || !serverField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        primaryButton.title = "Save Changes"
+        primaryButton.isEnabled = hasRoom && hasServer
     }
 
     private func setNote(_ field: NSTextField, row: NSGridRow?, _ text: String, isError: Bool = false) {
@@ -240,35 +235,38 @@ final class SettingsWindowController: NSWindowController {
 
     // MARK: - Actions
 
-    /// Applies the address as soon as it is committed, so there is no separate
-    /// Save step. Returns false when the field holds something unusable.
+    /// Normalizes and validates the server field.
+    /// Returns nil when no editable server is available.
     @discardableResult
-    private func commitServer() -> Bool {
-        guard !RealtimeSettings.isOverriddenByEnvironment else { return true }
+    private func validatedServerInput(showError: Bool) -> String? {
+        guard !RealtimeSettings.isOverriddenByEnvironment else { return nil }
 
         let raw = serverField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
-            setNote(serverNote, row: serverNoteRow, "")
+            if showError {
+                setNote(serverNote, row: serverNoteRow, "Enter the address of your realtime Worker first.", isError: true)
+            } else {
+                setNote(serverNote, row: serverNoteRow, "")
+            }
             resizeToFit()
-            return false
+            return nil
         }
         guard let address = RealtimeSettings.normalized(raw) else {
-            setNote(serverNote, row: serverNoteRow, "Not a usable address. Try wss://your-worker.example.workers.dev or ws://localhost:8787.", isError: true)
+            if showError {
+                setNote(serverNote, row: serverNoteRow, "Not a usable address. Try wss://your-worker.example.workers.dev or ws://localhost:8787.", isError: true)
+            }
             resizeToFit()
-            return false
+            return nil
         }
 
         serverField.stringValue = address
         setNote(serverNote, row: serverNoteRow, "")
         resizeToFit()
-        guard address != appliedServer else { return true }
-        appliedServer = address
-        onServerChange?(address)
-        return true
+        return address
     }
 
-    @objc private func commitServerAction() {
-        commitServer()
+    @objc private func validateServerAction() {
+        _ = validatedServerInput(showError: false)
     }
 
     @objc private func overlayToggled() {
@@ -276,19 +274,9 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func primaryTapped() {
-        if connection.isLive {
-            onDisconnect?()
-            return
-        }
-
-        // Bail on a rejected address rather than quietly dialling the previously
-        // stored one, which is still what `resolvedURL` would hand back.
-        guard commitServer() else {
-            if serverField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                reject(serverNote, row: serverNoteRow, "Enter the address of your realtime Worker first.", focus: serverField)
-            } else {
-                window?.makeFirstResponder(serverField)
-            }
+        let normalizedServer = validatedServerInput(showError: true)
+        if !RealtimeSettings.isOverriddenByEnvironment, normalizedServer == nil {
+            window?.makeFirstResponder(serverField)
             return
         }
 
@@ -300,7 +288,7 @@ final class SettingsWindowController: NSWindowController {
         roomField.stringValue = room
         setNote(roomNote, row: roomNoteRow, "")
         resizeToFit()
-        onConnect?(room)
+        onSaveChanges?(room, normalizedServer)
     }
 
     @objc private func closeTapped() {
@@ -312,13 +300,15 @@ final class SettingsWindowController: NSWindowController {
 
 extension SettingsWindowController: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
-        guard notification.object as? NSTextField === roomField else { return }
+        guard let field = notification.object as? NSTextField else { return }
+        guard field === roomField || field === serverField else { return }
         refreshPrimaryButton()
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
         guard notification.object as? NSTextField === serverField else { return }
-        commitServer()
+        _ = validatedServerInput(showError: false)
+        refreshPrimaryButton()
     }
 }
 
