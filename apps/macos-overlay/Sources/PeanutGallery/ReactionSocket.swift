@@ -7,6 +7,15 @@ enum ReactionConnectionState {
     case reconnecting
     /// No realtime server has been configured yet, so there is nothing to dial.
     case unconfigured
+
+    /// A socket is open or on its way up. Drives whether the UI offers to
+    /// connect or to disconnect.
+    var isLive: Bool {
+        switch self {
+        case .connected, .connecting, .reconnecting: return true
+        case .disconnected, .unconfigured: return false
+        }
+    }
 }
 
 struct ReactionMessage: Decodable {
