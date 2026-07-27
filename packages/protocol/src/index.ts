@@ -13,4 +13,11 @@ export type JoinRoomMessage = {
   clientType: ClientType
 }
 
+export type LeaderboardMessage = {
+  type: 'leaderboard'
+  counts: Record<string, number>
+}
+
 export type ClientMessage = ReactionMessage | JoinRoomMessage
+
+export type ServerMessage = ReactionMessage | LeaderboardMessage

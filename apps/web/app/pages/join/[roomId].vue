@@ -18,6 +18,10 @@
   const roomId = computed(() => String(route.params.roomId ?? ""));
   const config = useRuntimeConfig();
   const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
+  const reconnectDelays = [1000, 2000, 5000, 10000, 15000];
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempt = 0;
+  let isUnmounted = false;
 
   onMounted(() => {
     customEmoji.value = localStorage.getItem(customEmojiStorageKey) ?? "";
@@ -27,11 +31,29 @@
       return;
     }
 
+    connect();
+  });
+
+  onBeforeUnmount(() => {
+    isUnmounted = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    socket.value?.close();
+    socket.value = null;
+  });
+
+  function connect() {
+    if (isUnmounted || socket.value?.readyState === WebSocket.OPEN || socket.value?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    connectionState.value = "connecting";
     const url = `${realtimeUrl.replace(/^http/, "ws")}/rooms/${encodeURIComponent(roomId.value)}`;
     const connection = new WebSocket(url);
     socket.value = connection;
 
     connection.addEventListener("open", () => {
+      if (socket.value !== connection) return;
+      reconnectAttempt = 0;
       connectionState.value = "connected";
       connection.send(
         JSON.stringify({
@@ -58,18 +80,30 @@
     });
 
     connection.addEventListener("close", () => {
+      if (socket.value !== connection) return;
+      socket.value = null;
       connectionState.value = "disconnected";
+      scheduleReconnect();
     });
 
     connection.addEventListener("error", () => {
+      if (socket.value !== connection) return;
       connectionState.value = "error";
+      scheduleReconnect();
     });
-  });
+  }
 
-  onBeforeUnmount(() => {
-    socket.value?.close();
-    socket.value = null;
-  });
+  function scheduleReconnect() {
+    if (isUnmounted || reconnectTimer) return;
+
+    const delay = reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
+    reconnectAttempt += 1;
+    connectionState.value = "connecting";
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  }
 
   function react(emoji: string) {
     if (socket.value?.readyState !== WebSocket.OPEN) return;

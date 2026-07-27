@@ -13,6 +13,10 @@ importers:
         version: 2.10.6
 
   apps/realtime:
+    dependencies:
+      '@peanut-gallery/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260724.1

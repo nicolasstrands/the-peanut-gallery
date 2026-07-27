@@ -14,9 +14,12 @@ It contains a native AppKit menu-bar application with:
 - Floating window level without keyboard focus
 - `URLSessionWebSocketTask` connection to the realtime Worker
 - A bounded emoji particle animation view
+- A click-through floating room leaderboard showing the top five reactions
 - Menu-bar controls for selecting a room code, disconnecting, and hiding the overlay
 
 From the menu-bar peanut icon, choose **Connect to Room…** and enter the room code shared by the host. The selected room is saved locally and restored on the next launch. Choose **Disconnect** to clear the saved room.
+
+The leaderboard is shown by default and can be toggled with **Hide Leaderboard** in the menu bar.
 
 The WebSocket URL is configured in `Sources/PeanutGallery/ReactionSocket.swift` for the deployed realtime Worker.
 
