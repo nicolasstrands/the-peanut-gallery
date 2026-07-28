@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:peanut-gallery}/apps/macos-overlay",
+      "name": "Debug PeanutGallery (apps/macos-overlay)",
+      "target": "PeanutGallery",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug PeanutGallery (apps/macos-overlay)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:peanut-gallery}/apps/macos-overlay",
+      "name": "Release PeanutGallery (apps/macos-overlay)",
+      "target": "PeanutGallery",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release PeanutGallery (apps/macos-overlay)"
+    }
+  ]
+}

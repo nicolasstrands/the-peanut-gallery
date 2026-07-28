@@ -6,15 +6,16 @@ import AppKit
 /// The Save action validates and applies server/room together so connection
 /// updates can happen in one controlled step.
 final class SettingsWindowController: NSWindowController {
-    /// Called with a normalized room code and, when editable, a normalized
-    /// server URL.
-    var onSaveChanges: ((_ room: String, _ server: String?) -> Void)?
+    /// Called with a normalized room code, a normalized server URL, and a web UI URL.
+    var onSaveChanges: ((_ room: String, _ server: String?, _ webURL: String?) -> Void)?
     var onOverlayVisibilityChange: ((Bool) -> Void)?
 
     private let serverField = NSTextField()
     private let serverNote = NSTextField(labelWithString: "")
     private let roomField = NSTextField()
     private let roomNote = NSTextField(labelWithString: "")
+    private let webURLField = NSTextField()
+    private let webURLNote = NSTextField(labelWithString: "")
     private let overlayCheckbox = NSButton(checkboxWithTitle: "Show reactions on screen", target: nil, action: nil)
     private let connectionLabel = NSTextField(labelWithString: "Disconnected")
     private let primaryButton = NSButton(title: "Save Changes", target: nil, action: nil)
@@ -23,6 +24,7 @@ final class SettingsWindowController: NSWindowController {
     /// otherwise the blank rows leave uneven gaps between the fields.
     private var serverNoteRow: NSGridRow?
     private var roomNoteRow: NSGridRow?
+    private var webURLNoteRow: NSGridRow?
 
     private var connection: ReactionConnectionState = .disconnected
     private var hasBeenPositioned = false
@@ -52,14 +54,17 @@ final class SettingsWindowController: NSWindowController {
 
         configure(serverField, placeholder: "wss://peanut-gallery-realtime.<subdomain>.workers.dev", width: Self.fieldWidth)
         configure(roomField, placeholder: "e.g. ABC123", width: 160)
+        configure(webURLField, placeholder: "https://peanutgallery.arcodelabs.com", width: Self.fieldWidth)
         // Return in a field acts on that field rather than firing the window's
         // default button, so Return on the server just normalizes/validates it.
         serverField.target = self
         serverField.action = #selector(validateServerAction)
         roomField.target = self
         roomField.action = #selector(primaryTapped)
+        webURLField.target = self
+        webURLField.action = #selector(primaryTapped)
 
-        for note in [serverNote, roomNote] {
+        for note in [serverNote, roomNote, webURLNote] {
             note.font = .systemFont(ofSize: 11)
             note.textColor = .secondaryLabelColor
             note.lineBreakMode = .byWordWrapping
@@ -78,6 +83,8 @@ final class SettingsWindowController: NSWindowController {
             [NSGridCell.emptyContentView, serverNote],
             [Self.label("Room code"), roomField],
             [NSGridCell.emptyContentView, roomNote],
+            [Self.label("Web UI URL"), webURLField],
+            [NSGridCell.emptyContentView, webURLNote],
             [Self.label("Overlay"), overlayCheckbox],
             [Self.label("Connection"), connectionLabel],
         ])
@@ -87,8 +94,10 @@ final class SettingsWindowController: NSWindowController {
         grid.translatesAutoresizingMaskIntoConstraints = false
         serverNoteRow = grid.row(at: 1)
         roomNoteRow = grid.row(at: 3)
+        webURLNoteRow = grid.row(at: 5)
         serverNoteRow?.isHidden = true
         roomNoteRow?.isHidden = true
+        webURLNoteRow?.isHidden = true
 
         primaryButton.target = self
         primaryButton.action = #selector(primaryTapped)
@@ -155,7 +164,7 @@ final class SettingsWindowController: NSWindowController {
 
     // MARK: - Presenting
 
-    func present(room: String?, overlayVisible: Bool, connection: ReactionConnectionState) {
+    func present(room: String?, overlayVisible: Bool, connection: ReactionConnectionState, webURL: String?) {
         let environmentControlled = RealtimeSettings.isOverriddenByEnvironment
         serverField.isEditable = !environmentControlled
         serverField.stringValue = (environmentControlled ? RealtimeSettings.resolvedURL : RealtimeSettings.storedURL) ?? ""
@@ -165,6 +174,8 @@ final class SettingsWindowController: NSWindowController {
 
         roomField.stringValue = room ?? Self.roomOnPasteboard() ?? ""
         setNote(roomNote, row: roomNoteRow, "")
+        webURLField.stringValue = webURL ?? ""
+        setNote(webURLNote, row: webURLNoteRow, "Leave blank to use https://peanutgallery.arcodelabs.com.")
         overlayCheckbox.state = overlayVisible ? .on : .off
         update(connection: connection)
 
@@ -288,7 +299,8 @@ final class SettingsWindowController: NSWindowController {
         roomField.stringValue = room
         setNote(roomNote, row: roomNoteRow, "")
         resizeToFit()
-        onSaveChanges?(room, normalizedServer)
+        let webURL = webURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSaveChanges?(room, normalizedServer, webURL.isEmpty ? nil : webURL)
     }
 
     @objc private func closeTapped() {
@@ -301,7 +313,7 @@ final class SettingsWindowController: NSWindowController {
 extension SettingsWindowController: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
-        guard field === roomField || field === serverField else { return }
+        guard field === roomField || field === serverField || field === webURLField else { return }
         refreshPrimaryButton()
     }
 

@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// disconnect. Kept apart from the room code so disconnecting can stop
         /// the socket without forgetting which room you were in.
         static let autoConnect = "peanutGallery.autoConnect"
+        static let webURL = "peanutGallery.webURL"
     }
 
     private var statusItem: NSStatusItem!
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var connectionMenuItem: NSMenuItem!
     private var serverMenuItem: NSMenuItem!
     private var roomMenuItem: NSMenuItem!
+    private var webMenuItem: NSMenuItem!
     private var toggleMenuItem: NSMenuItem!
     private var leaderboardToggleMenuItem: NSMenuItem!
 
@@ -77,6 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(settingsItem)
+        let openWebItem = NSMenuItem(title: "Open Web UI", action: #selector(openWebUI), keyEquivalent: "")
+        openWebItem.target = self
+        appMenu.addItem(openWebItem)
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Peanut Gallery", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
@@ -116,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
         menu.addItem(item(title: "Settings…", action: #selector(openSettings), key: ","))
+        webMenuItem = item(title: "Open Web UI", action: #selector(openWebUI), key: "o")
+        menu.addItem(webMenuItem)
         toggleMenuItem = item(title: "Hide Overlay", action: #selector(toggleOverlay), key: "h")
         menu.addItem(toggleMenuItem)
         leaderboardToggleMenuItem = item(title: "Hide Leaderboard", action: #selector(toggleLeaderboard), key: "l")
@@ -142,23 +149,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildSettingsController() {
         settingsController = SettingsWindowController()
 
-        settingsController.onSaveChanges = { [weak self] room, server in
+        settingsController.onSaveChanges = { [weak self] room, server, webURL in
             guard let self else { return }
 
             let wasLive = self.connectionState.isLive
             let previousRoom = self.savedRoom
             let previousServer = RealtimeSettings.resolvedURL
+            let previousWebURL = self.savedWebUIURL
 
             if let server, server != previousServer {
                 RealtimeSettings.store(server)
                 self.updateServerMenuItem()
             }
 
+            let normalizedWebURL = self.normalizedWebUIURL(from: webURL)
+            if normalizedWebURL != previousWebURL {
+                UserDefaults.standard.set(normalizedWebURL, forKey: DefaultsKey.webURL)
+            }
+
             let roomChanged = previousRoom != room
             let serverChanged = server.map { $0 != previousServer } ?? false
+            let webURLChanged = normalizedWebURL != previousWebURL
 
             if wasLive {
-                guard roomChanged || serverChanged else { return }
+                guard roomChanged || serverChanged || webURLChanged else { return }
                 self.disconnect()
                 self.connect(to: room)
             } else {
@@ -207,8 +221,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController.present(
             room: savedRoom,
             overlayVisible: overlayController.isVisible,
-            connection: connectionState
+            connection: connectionState,
+            webURL: savedWebUIURL
         )
+    }
+
+    @objc private func openWebUI() {
+        guard let url = webUIURL() else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private var savedWebUIURL: String {
+        normalizedWebUIURL(from: UserDefaults.standard.string(forKey: DefaultsKey.webURL))
+    }
+
+    private func normalizedWebUIURL(from rawValue: String?) -> String {
+        let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "https://peanutgallery.arcodelabs.com" : trimmed
+    }
+
+    private func webUIURL() -> URL? {
+        URL(string: savedWebUIURL)
     }
 
     private func updateServerMenuItem() {
