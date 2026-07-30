@@ -57,6 +57,11 @@ export class ReactionRoom extends DurableObject<Env> {
       return;
     }
 
+    if (parsed.type === "presence-sync") {
+      this.broadcastPresence();
+      return;
+    }
+
     if (parsed.type !== "reaction" || !this.isValidReaction(parsed)) return;
     if (!this.acceptReaction(ws)) return;
 

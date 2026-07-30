@@ -21,8 +21,10 @@
   const roomId = computed(() => String(route.params.roomId ?? ""));
   const config = useRuntimeConfig();
   const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
+  const presenceRefreshIntervalMs = 15000;
   const reconnectDelays = [1000, 2000, 5000, 10000, 15000];
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let presenceRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let reconnectAttempt = 0;
   let isUnmounted = false;
 
@@ -43,6 +45,7 @@
 
   onBeforeUnmount(() => {
     isUnmounted = true;
+    stopPresenceRefreshTimer();
     if (reconnectTimer) clearTimeout(reconnectTimer);
     socket.value?.close();
     socket.value = null;
@@ -66,13 +69,8 @@
       if (socket.value !== connection) return;
       reconnectAttempt = 0;
       connectionState.value = "connected";
-      connection.send(
-        JSON.stringify({
-          type: "join-room",
-          roomId: roomId.value,
-          clientType: "web",
-        }),
-      );
+      sendJoinRoom(connection);
+      startPresenceRefreshTimer(connection);
     });
 
     connection.addEventListener("message", (event) => {
@@ -102,6 +100,7 @@
       socket.value = null;
       connectionState.value = "disconnected";
       connectedCount.value = null;
+      stopPresenceRefreshTimer();
       scheduleReconnect();
     });
 
@@ -109,8 +108,42 @@
       if (socket.value !== connection) return;
       connectionState.value = "error";
       connectedCount.value = null;
+      stopPresenceRefreshTimer();
       scheduleReconnect();
     });
+  }
+
+  function sendJoinRoom(connection: WebSocket) {
+    connection.send(
+      JSON.stringify({
+        type: "join-room",
+        roomId: roomId.value,
+        clientType: "web",
+      }),
+    );
+  }
+
+  function sendPresenceSync(connection: WebSocket) {
+    if (connection.readyState !== WebSocket.OPEN) return;
+    connection.send(
+      JSON.stringify({
+        type: "presence-sync",
+      }),
+    );
+  }
+
+  function startPresenceRefreshTimer(connection: WebSocket) {
+    stopPresenceRefreshTimer();
+    presenceRefreshTimer = setInterval(() => {
+      if (socket.value !== connection) return;
+      sendPresenceSync(connection);
+    }, presenceRefreshIntervalMs);
+  }
+
+  function stopPresenceRefreshTimer() {
+    if (!presenceRefreshTimer) return;
+    clearInterval(presenceRefreshTimer);
+    presenceRefreshTimer = null;
   }
 
   function scheduleReconnect() {

@@ -13,6 +13,10 @@ export type JoinRoomMessage = {
   clientType: ClientType;
 };
 
+export type PresenceSyncMessage = {
+  type: "presence-sync";
+};
+
 export type LeaderboardMessage = {
   type: "leaderboard";
   counts: Record<string, number>;
@@ -23,7 +27,10 @@ export type PresenceMessage = {
   connected: number;
 };
 
-export type ClientMessage = ReactionMessage | JoinRoomMessage;
+export type ClientMessage =
+  | ReactionMessage
+  | JoinRoomMessage
+  | PresenceSyncMessage;
 
 export type ServerMessage =
   | ReactionMessage
