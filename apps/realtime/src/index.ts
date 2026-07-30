@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type {
+  ClientType,
   ClientMessage,
   LeaderboardMessage,
   PresenceMessage,
@@ -16,6 +17,7 @@ export class ReactionRoom extends DurableObject<Env> {
   private counts: Record<string, number> = {};
   private readonly countsLoaded: Promise<void>;
   private readonly reactionTimestamps = new WeakMap<WebSocket, number[]>();
+  private readonly clientTypes = new WeakMap<WebSocket, ClientType>();
   private leaderboardBroadcastScheduled = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -49,6 +51,7 @@ export class ReactionRoom extends DurableObject<Env> {
     }
 
     if (parsed.type === "join-room") {
+      this.clientTypes.set(ws, parsed.clientType);
       this.sendLeaderboard(ws);
       this.broadcastPresence();
       return;
@@ -68,11 +71,13 @@ export class ReactionRoom extends DurableObject<Env> {
     this.scheduleLeaderboardBroadcast();
   }
 
-  webSocketClose(_ws: WebSocket) {
+  webSocketClose(ws: WebSocket) {
+    this.clientTypes.delete(ws);
     this.broadcastPresence();
   }
 
-  webSocketError(_ws: WebSocket) {
+  webSocketError(ws: WebSocket) {
+    this.clientTypes.delete(ws);
     this.broadcastPresence();
   }
 
@@ -85,7 +90,12 @@ export class ReactionRoom extends DurableObject<Env> {
   }
 
   private broadcastPresence() {
-    const connected = this.ctx.getWebSockets().length;
+    const connected = this.ctx
+      .getWebSockets()
+      .reduce(
+        (total, session) => total + (this.clientTypes.get(session) === "web" ? 1 : 0),
+        0,
+      );
     const message: PresenceMessage = { type: "presence", connected };
     const payload = JSON.stringify(message);
     for (const session of this.ctx.getWebSockets()) {
