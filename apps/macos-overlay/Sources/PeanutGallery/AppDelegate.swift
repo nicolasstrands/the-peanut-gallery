@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let webURL = "peanutGallery.webURL"
     }
 
+    private static let defaultWebUIURL = "https://peanutgallery.arcodelabs.com"
+
     private var statusItem: NSStatusItem!
     private var overlayController: OverlayController!
     private var leaderboardController: LeaderboardController!
@@ -149,27 +151,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildSettingsController() {
         settingsController = SettingsWindowController()
 
-        settingsController.onSaveChanges = { [weak self] room, server, webURL in
+        settingsController.onSaveChanges = { [weak self] room, developerModeEnabled, server, webURL in
             guard let self else { return }
 
             let wasLive = self.connectionState.isLive
             let previousRoom = self.savedRoom
             let previousServer = RealtimeSettings.resolvedURL
-            let previousWebURL = self.savedWebUIURL
+            let previousWebURL = self.resolvedWebUIURL
 
-            if let server, server != previousServer {
+            FeatureFlags.setDeveloperModeEnabled(developerModeEnabled)
+
+            if server != RealtimeSettings.storedURL {
                 RealtimeSettings.store(server)
-                self.updateServerMenuItem()
             }
+            self.updateServerMenuItem()
 
-            let normalizedWebURL = self.normalizedWebUIURL(from: webURL)
-            if normalizedWebURL != previousWebURL {
-                UserDefaults.standard.set(normalizedWebURL, forKey: DefaultsKey.webURL)
+            let trimmedWebURL = self.trimmedWebUIOverride(webURL)
+            if trimmedWebURL != self.storedWebUIOverride {
+                if let trimmedWebURL {
+                    UserDefaults.standard.set(trimmedWebURL, forKey: DefaultsKey.webURL)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: DefaultsKey.webURL)
+                }
             }
 
             let roomChanged = previousRoom != room
-            let serverChanged = server.map { $0 != previousServer } ?? false
-            let webURLChanged = normalizedWebURL != previousWebURL
+            let serverChanged = RealtimeSettings.resolvedURL != previousServer
+            let webURLChanged = self.resolvedWebUIURL != previousWebURL
 
             if wasLive {
                 guard roomChanged || serverChanged || webURLChanged else { return }
@@ -184,14 +192,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Reconnects to where the user left off, or opens Settings when there is
-    /// nowhere to connect to yet.
+    /// Reconnects to where the user left off, using the production realtime
+    /// endpoint unless developer mode has a custom override enabled.
     private func restoreSession() {
-        guard RealtimeSettings.resolvedURL != nil else {
-            updateConnectionStatus(.unconfigured)
-            DispatchQueue.main.async { [weak self] in self?.openSettings() }
-            return
-        }
         if let room = savedRoom, shouldAutoConnect {
             connect(to: room)
         } else {
@@ -222,7 +225,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             room: savedRoom,
             overlayVisible: overlayController.isVisible,
             connection: connectionState,
-            webURL: savedWebUIURL
+            developerModeEnabled: FeatureFlags.isDeveloperModeEnabled,
+            serverOverride: RealtimeSettings.storedURL,
+            webURLOverride: storedWebUIOverride
         )
     }
 
@@ -231,17 +236,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    private var savedWebUIURL: String {
-        normalizedWebUIURL(from: UserDefaults.standard.string(forKey: DefaultsKey.webURL))
+    private var storedWebUIOverride: String? {
+        trimmedWebUIOverride(UserDefaults.standard.string(forKey: DefaultsKey.webURL))
     }
 
-    private func normalizedWebUIURL(from rawValue: String?) -> String {
+    private var resolvedWebUIURL: String {
+        if FeatureFlags.isDeveloperModeEnabled, let storedWebUIOverride {
+            return storedWebUIOverride
+        }
+        return Self.defaultWebUIURL
+    }
+
+    private func trimmedWebUIOverride(_ rawValue: String?) -> String? {
         let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? "https://peanutgallery.arcodelabs.com" : trimmed
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func webUIURL() -> URL? {
-        URL(string: savedWebUIURL)
+        URL(string: resolvedWebUIURL)
     }
 
     private func updateServerMenuItem() {

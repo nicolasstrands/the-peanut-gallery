@@ -5,6 +5,10 @@
       "Create a live reaction room in seconds and let your audience send emoji to your screen in real time.",
   });
   const isHomeHeroMounted = useState<boolean>("home-hero-mounted", () => false);
+  const requestURL = useRequestURL();
+  const showStrandsLogo = computed(
+    () => requestURL.hostname === "peanutgallery.arcodelabs.com",
+  );
 
   onMounted(() => {
     isHomeHeroMounted.value = true;
@@ -16,7 +20,11 @@
 </script>
 
 <template>
-  <img class="h-auto w-30" src="/strands.svg" alt="strands-logo" />
+  <img
+    v-if="showStrandsLogo"
+    class="h-auto w-30"
+    src="/strands.svg"
+    alt="strands-logo" />
   <h1>
     Welcome to<br />
     <span

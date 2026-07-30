@@ -45,3 +45,6 @@ service-account*.json
 
 # macOS metadata
 .DS_Store
+
+# Local planning notes
+shipping-plan.md

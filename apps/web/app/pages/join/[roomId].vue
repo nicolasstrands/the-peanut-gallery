@@ -15,6 +15,7 @@
   const connectionState = ref<
     "connecting" | "connected" | "disconnected" | "error"
   >("connecting");
+  const connectedCount = ref<number | null>(null);
   const socket = ref<WebSocket | null>(null);
 
   const roomId = computed(() => String(route.params.roomId ?? ""));
@@ -79,10 +80,17 @@
         const message = JSON.parse(String(event.data)) as {
           type?: string;
           emoji?: string;
+          connected?: number;
         };
         if (message.type === "reaction" && typeof message.emoji === "string") {
           sent.value.unshift(message.emoji);
           if (sent.value.length > 8) sent.value.pop();
+        }
+        if (
+          message.type === "presence" &&
+          typeof message.connected === "number"
+        ) {
+          connectedCount.value = message.connected;
         }
       } catch {
         // Ignore malformed messages from the server.
@@ -93,12 +101,14 @@
       if (socket.value !== connection) return;
       socket.value = null;
       connectionState.value = "disconnected";
+      connectedCount.value = null;
       scheduleReconnect();
     });
 
     connection.addEventListener("error", () => {
       if (socket.value !== connection) return;
       connectionState.value = "error";
+      connectedCount.value = null;
       scheduleReconnect();
     });
   }
@@ -155,6 +165,16 @@
   function isSingleEmoji(value: string) {
     return emojiPattern.test(value);
   }
+
+  const connectedCountLabel = computed(() => {
+    if (connectionState.value !== "connected") {
+      return "Room presence unavailable";
+    }
+    if (connectedCount.value == null) {
+      return "Counting people in room...";
+    }
+    return `${connectedCount.value} ${connectedCount.value === 1 ? "person" : "people"} in room`;
+  });
 </script>
 
 <template>
@@ -173,6 +193,7 @@
               : "Disconnected"
       }}
     </p>
+    <p class="presence">{{ connectedCountLabel }}</p>
     <div class="grid">
       <button
         v-for="emoji in reactions"
@@ -250,6 +271,11 @@
     height: 7px;
     border-radius: 50%;
     background: currentColor;
+  }
+  .presence {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #8e8273;
   }
   .grid {
     display: grid;

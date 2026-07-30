@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
-import type { ClientMessage, LeaderboardMessage, ReactionMessage } from '@peanut-gallery/protocol'
+import type { ClientMessage, LeaderboardMessage, PresenceMessage, ReactionMessage } from '@peanut-gallery/protocol'
 
 export interface Env { ROOMS: DurableObjectNamespace<ReactionRoom> }
 
@@ -23,6 +23,7 @@ export class ReactionRoom extends DurableObject<Env> {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket]
     this.ctx.acceptWebSocket(server)
+    this.broadcastPresence()
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -39,6 +40,7 @@ export class ReactionRoom extends DurableObject<Env> {
 
     if (parsed.type === 'join-room') {
       this.sendLeaderboard(ws)
+      this.broadcastPresence()
       return
     }
 
@@ -56,11 +58,30 @@ export class ReactionRoom extends DurableObject<Env> {
     this.scheduleLeaderboardBroadcast()
   }
 
-  webSocketClose(_ws: WebSocket) {}
+  webSocketClose(_ws: WebSocket) {
+    this.broadcastPresence()
+  }
+
+  webSocketError(_ws: WebSocket) {
+    this.broadcastPresence()
+  }
 
   private sendLeaderboard(ws: WebSocket) {
     const message: LeaderboardMessage = { type: 'leaderboard', counts: this.counts }
     ws.send(JSON.stringify(message))
+  }
+
+  private broadcastPresence() {
+    const connected = this.ctx.getWebSockets().length
+    const message: PresenceMessage = { type: 'presence', connected }
+    const payload = JSON.stringify(message)
+    for (const session of this.ctx.getWebSockets()) {
+      try {
+        session.send(payload)
+      } catch {
+        // Ignore sessions that are closing while we broadcast.
+      }
+    }
   }
 
   private scheduleLeaderboardBroadcast() {

@@ -6,13 +6,17 @@ import AppKit
 /// The Save action validates and applies server/room together so connection
 /// updates can happen in one controlled step.
 final class SettingsWindowController: NSWindowController {
-    /// Called with a normalized room code, a normalized server URL, and a web UI URL.
-    var onSaveChanges: ((_ room: String, _ server: String?, _ webURL: String?) -> Void)?
+    /// Called with a normalized room code, the developer-mode state, an optional
+    /// custom server URL, and an optional custom web UI URL.
+    var onSaveChanges: ((_ room: String, _ developerModeEnabled: Bool, _ server: String?, _ webURL: String?) -> Void)?
     var onOverlayVisibilityChange: ((Bool) -> Void)?
 
+    private let developerModeCheckbox = NSButton(checkboxWithTitle: "Enable developer settings", target: nil, action: nil)
+    private let developerModeNote = NSTextField(labelWithString: "")
     private let serverField = NSTextField()
     private let serverNote = NSTextField(labelWithString: "")
     private let roomField = NSTextField()
+    private let roomPasteButton = NSButton(title: "Paste", target: nil, action: nil)
     private let roomNote = NSTextField(labelWithString: "")
     private let webURLField = NSTextField()
     private let webURLNote = NSTextField(labelWithString: "")
@@ -22,12 +26,19 @@ final class SettingsWindowController: NSWindowController {
 
     /// Notes sit in their own grid rows so they can collapse when empty;
     /// otherwise the blank rows leave uneven gaps between the fields.
+    private var developerModeNoteRow: NSGridRow?
+    private var serverFieldRow: NSGridRow?
     private var serverNoteRow: NSGridRow?
     private var roomNoteRow: NSGridRow?
+    private var webURLFieldRow: NSGridRow?
     private var webURLNoteRow: NSGridRow?
 
     private var connection: ReactionConnectionState = .disconnected
     private var hasBeenPositioned = false
+    private var savedServerOverride: String?
+    private var savedWebURLOverride: String?
+    private var pasteboardMonitor: Timer?
+    private var lastPasteboardChangeCount = NSPasteboard.general.changeCount
 
     private static let fieldWidth: CGFloat = 340
 
@@ -55,6 +66,12 @@ final class SettingsWindowController: NSWindowController {
         configure(serverField, placeholder: "wss://peanut-gallery-realtime.<subdomain>.workers.dev", width: Self.fieldWidth)
         configure(roomField, placeholder: "e.g. ABC123", width: 160)
         configure(webURLField, placeholder: "https://peanutgallery.arcodelabs.com", width: Self.fieldWidth)
+        roomPasteButton.target = self
+        roomPasteButton.action = #selector(pasteRoomFromClipboard)
+        roomPasteButton.bezelStyle = .rounded
+        roomPasteButton.isEnabled = false
+        developerModeCheckbox.target = self
+        developerModeCheckbox.action = #selector(developerModeToggled)
         // Return in a field acts on that field rather than firing the window's
         // default button, so Return on the server just normalizes/validates it.
         serverField.target = self
@@ -64,7 +81,7 @@ final class SettingsWindowController: NSWindowController {
         webURLField.target = self
         webURLField.action = #selector(primaryTapped)
 
-        for note in [serverNote, roomNote, webURLNote] {
+        for note in [developerModeNote, serverNote, roomNote, webURLNote] {
             note.font = .systemFont(ofSize: 11)
             note.textColor = .secondaryLabelColor
             note.lineBreakMode = .byWordWrapping
@@ -78,25 +95,39 @@ final class SettingsWindowController: NSWindowController {
         overlayCheckbox.target = self
         overlayCheckbox.action = #selector(overlayToggled)
 
+        let roomInputRow = NSStackView(views: [roomField, roomPasteButton])
+        roomInputRow.orientation = .horizontal
+        roomInputRow.alignment = .centerY
+        roomInputRow.spacing = 8
+        roomInputRow.translatesAutoresizingMaskIntoConstraints = false
+
         let grid = NSGridView(views: [
-            [Self.label("Realtime server"), serverField],
-            [NSGridCell.emptyContentView, serverNote],
-            [Self.label("Room code"), roomField],
+            [Self.label("Room code"), roomInputRow],
             [NSGridCell.emptyContentView, roomNote],
-            [Self.label("Web UI URL"), webURLField],
-            [NSGridCell.emptyContentView, webURLNote],
             [Self.label("Overlay"), overlayCheckbox],
+            [Self.label("Developer mode"), developerModeCheckbox],
+            [NSGridCell.emptyContentView, developerModeNote],
+            [Self.label("Custom realtime server"), serverField],
+            [NSGridCell.emptyContentView, serverNote],
+            [Self.label("Custom Web UI URL"), webURLField],
+            [NSGridCell.emptyContentView, webURLNote],
             [Self.label("Connection"), connectionLabel],
         ])
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 12
         grid.columnSpacing = 12
         grid.translatesAutoresizingMaskIntoConstraints = false
-        serverNoteRow = grid.row(at: 1)
-        roomNoteRow = grid.row(at: 3)
-        webURLNoteRow = grid.row(at: 5)
+        roomNoteRow = grid.row(at: 1)
+        developerModeNoteRow = grid.row(at: 4)
+        serverFieldRow = grid.row(at: 5)
+        serverNoteRow = grid.row(at: 6)
+        webURLFieldRow = grid.row(at: 7)
+        webURLNoteRow = grid.row(at: 8)
+        developerModeNoteRow?.isHidden = true
+        serverFieldRow?.isHidden = true
         serverNoteRow?.isHidden = true
         roomNoteRow?.isHidden = true
+        webURLFieldRow?.isHidden = true
         webURLNoteRow?.isHidden = true
 
         primaryButton.target = self
@@ -164,20 +195,26 @@ final class SettingsWindowController: NSWindowController {
 
     // MARK: - Presenting
 
-    func present(room: String?, overlayVisible: Bool, connection: ReactionConnectionState, webURL: String?) {
-        let environmentControlled = RealtimeSettings.isOverriddenByEnvironment
-        serverField.isEditable = !environmentControlled
-        serverField.stringValue = (environmentControlled ? RealtimeSettings.resolvedURL : RealtimeSettings.storedURL) ?? ""
-        setNote(serverNote, row: serverNoteRow, environmentControlled
-            ? "Set by PEANUT_GALLERY_REALTIME_URL. Unset it and relaunch to edit this."
-            : "")
-
+    func present(
+        room: String?,
+        overlayVisible: Bool,
+        connection: ReactionConnectionState,
+        developerModeEnabled: Bool,
+        serverOverride: String?,
+        webURLOverride: String?
+    ) {
+        savedServerOverride = serverOverride
+        savedWebURLOverride = webURLOverride
+        developerModeCheckbox.state = developerModeEnabled ? .on : .off
+        serverField.stringValue = serverOverride ?? ""
         roomField.stringValue = room ?? Self.roomOnPasteboard() ?? ""
         setNote(roomNote, row: roomNoteRow, "")
-        webURLField.stringValue = webURL ?? ""
-        setNote(webURLNote, row: webURLNoteRow, "Leave blank to use https://peanutgallery.arcodelabs.com.")
+        webURLField.stringValue = webURLOverride ?? ""
         overlayCheckbox.state = overlayVisible ? .on : .off
+        refreshRoomPasteButton()
+        startPasteboardMonitoring()
         update(connection: connection)
+        updateDeveloperFields()
 
         resizeToFit()
         // An accessory app never comes forward on its own, so without this the
@@ -188,7 +225,7 @@ final class SettingsWindowController: NSWindowController {
             hasBeenPositioned = true
         }
         window?.makeKeyAndOrderFront(nil)
-        window?.makeFirstResponder(environmentControlled ? roomField : serverField)
+        window?.makeFirstResponder(developerModeEnabled && !RealtimeSettings.isOverriddenByEnvironment ? serverField : roomField)
     }
 
     func update(connection state: ReactionConnectionState) {
@@ -215,10 +252,44 @@ final class SettingsWindowController: NSWindowController {
     /// The one action button, always named for what it is about to do.
     private func refreshPrimaryButton() {
         let hasRoom = !roomField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasServer = RealtimeSettings.isOverriddenByEnvironment
-            || !serverField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         primaryButton.title = "Save Changes"
-        primaryButton.isEnabled = hasRoom && hasServer
+        primaryButton.isEnabled = hasRoom
+        refreshRoomPasteButton()
+    }
+
+    private func updateDeveloperFields() {
+        let developerModeEnabled = developerModeCheckbox.state == .on
+        let environmentControlled = RealtimeSettings.isOverriddenByEnvironment
+
+        serverField.isEditable = developerModeEnabled && !environmentControlled
+        serverFieldRow?.isHidden = !developerModeEnabled
+        webURLFieldRow?.isHidden = !developerModeEnabled
+
+        setNote(
+            developerModeNote,
+            row: developerModeNoteRow,
+            developerModeEnabled
+                ? "Custom overrides are stored only on this Mac. Leave either field blank to keep the Arcodelabs defaults."
+                : "Turn this on only if you need local development or a self-hosted deployment."
+        )
+        setNote(
+            serverNote,
+            row: serverNoteRow,
+            developerModeEnabled && environmentControlled
+                ? "Set by PEANUT_GALLERY_REALTIME_URL. Unset it and relaunch to edit this."
+                : developerModeEnabled
+                    ? "Leave blank to use \(RealtimeSettings.defaultURL)."
+                    : ""
+        )
+        setNote(
+            webURLNote,
+            row: webURLNoteRow,
+            developerModeEnabled
+                ? "Leave blank to use https://peanutgallery.arcodelabs.com."
+                : ""
+        )
+        refreshPrimaryButton()
+        resizeToFit()
     }
 
     private func setNote(_ field: NSTextField, row: NSGridRow?, _ text: String, isError: Bool = false) {
@@ -235,49 +306,97 @@ final class SettingsWindowController: NSWindowController {
 
     /// Room codes travel by copy and paste, so offer the clipboard when there is
     /// no room to show. Six alphanumerics is what the web deck generates.
-    private static func roomOnPasteboard() -> String? {
-        guard let clipboard = NSPasteboard.general.string(forType: .string) else { return nil }
-        let candidate = clipboard.trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func normalizedRoomCode(_ raw: String) -> String? {
+        let candidate = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard candidate.count == 6,
               candidate.unicodeScalars.allSatisfy(CharacterSet.alphanumerics.contains)
         else { return nil }
         return candidate.uppercased()
     }
 
+    private static func roomOnPasteboard() -> String? {
+        guard let clipboard = NSPasteboard.general.string(forType: .string) else { return nil }
+        return normalizedRoomCode(clipboard)
+    }
+
+    private func refreshRoomPasteButton() {
+        roomPasteButton.isEnabled = Self.roomOnPasteboard() != nil
+    }
+
+    private func startPasteboardMonitoring() {
+        stopPasteboardMonitoring()
+        lastPasteboardChangeCount = NSPasteboard.general.changeCount
+        pasteboardMonitor = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.pollPasteboard()
+        }
+    }
+
+    private func stopPasteboardMonitoring() {
+        pasteboardMonitor?.invalidate()
+        pasteboardMonitor = nil
+    }
+
+    private func pollPasteboard() {
+        let currentChangeCount = NSPasteboard.general.changeCount
+        guard currentChangeCount != lastPasteboardChangeCount else { return }
+        lastPasteboardChangeCount = currentChangeCount
+        refreshRoomPasteButton()
+    }
+
     // MARK: - Actions
 
-    /// Normalizes and validates the server field.
-    /// Returns nil when no editable server is available.
-    @discardableResult
-    private func validatedServerInput(showError: Bool) -> String? {
-        guard !RealtimeSettings.isOverriddenByEnvironment else { return nil }
+    private enum ServerOverrideValidationResult {
+        case inheritDefault
+        case valid(String)
+        case invalid
+    }
+
+    /// Normalizes and validates the server override field.
+    private func validatedServerInput(showError: Bool) -> ServerOverrideValidationResult {
+        let developerModeEnabled = developerModeCheckbox.state == .on
+        guard developerModeEnabled else {
+            return savedServerOverride.map(ServerOverrideValidationResult.valid) ?? .inheritDefault
+        }
+        guard !RealtimeSettings.isOverriddenByEnvironment else {
+            return savedServerOverride.map(ServerOverrideValidationResult.valid) ?? .inheritDefault
+        }
 
         let raw = serverField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else {
-            if showError {
-                setNote(serverNote, row: serverNoteRow, "Enter the address of your realtime Worker first.", isError: true)
-            } else {
-                setNote(serverNote, row: serverNoteRow, "")
-            }
+            setNote(serverNote, row: serverNoteRow, "Leave blank to use \(RealtimeSettings.defaultURL).")
             resizeToFit()
-            return nil
+            return .inheritDefault
         }
         guard let address = RealtimeSettings.normalized(raw) else {
             if showError {
                 setNote(serverNote, row: serverNoteRow, "Not a usable address. Try wss://your-worker.example.workers.dev or ws://localhost:8787.", isError: true)
             }
             resizeToFit()
-            return nil
+            return .invalid
         }
 
         serverField.stringValue = address
-        setNote(serverNote, row: serverNoteRow, "")
+        setNote(serverNote, row: serverNoteRow, "Leave blank to use \(RealtimeSettings.defaultURL).")
         resizeToFit()
-        return address
+        return .valid(address)
     }
 
     @objc private func validateServerAction() {
         _ = validatedServerInput(showError: false)
+    }
+
+    @objc private func developerModeToggled() {
+        updateDeveloperFields()
+    }
+
+    @objc private func pasteRoomFromClipboard() {
+        guard let room = Self.roomOnPasteboard() else {
+            refreshRoomPasteButton()
+            return
+        }
+        roomField.stringValue = room
+        setNote(roomNote, row: roomNoteRow, "")
+        refreshPrimaryButton()
     }
 
     @objc private func overlayToggled() {
@@ -285,8 +404,13 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func primaryTapped() {
-        let normalizedServer = validatedServerInput(showError: true)
-        if !RealtimeSettings.isOverriddenByEnvironment, normalizedServer == nil {
+        let serverOverride: String?
+        switch validatedServerInput(showError: true) {
+        case .inheritDefault:
+            serverOverride = nil
+        case .valid(let value):
+            serverOverride = value
+        case .invalid:
             window?.makeFirstResponder(serverField)
             return
         }
@@ -299,8 +423,11 @@ final class SettingsWindowController: NSWindowController {
         roomField.stringValue = room
         setNote(roomNote, row: roomNoteRow, "")
         resizeToFit()
-        let webURL = webURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        onSaveChanges?(room, normalizedServer, webURL.isEmpty ? nil : webURL)
+        let developerModeEnabled = developerModeCheckbox.state == .on
+        let webURL = developerModeEnabled
+            ? webURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            : (savedWebURLOverride ?? "")
+        onSaveChanges?(room, developerModeEnabled, serverOverride, webURL.isEmpty ? nil : webURL)
     }
 
     @objc private func closeTapped() {
@@ -328,8 +455,14 @@ extension SettingsWindowController: NSTextFieldDelegate {
 
 extension SettingsWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
+        stopPasteboardMonitoring()
         // Giving up first responder ends editing, which commits a server the
         // user typed and then closed the window without tabbing out of.
         window?.makeFirstResponder(nil)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        lastPasteboardChangeCount = NSPasteboard.general.changeCount
+        refreshRoomPasteButton()
     }
 }

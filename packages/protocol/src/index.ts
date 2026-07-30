@@ -18,6 +18,11 @@ export type LeaderboardMessage = {
   counts: Record<string, number>
 }
 
+export type PresenceMessage = {
+  type: 'presence'
+  connected: number
+}
+
 export type ClientMessage = ReactionMessage | JoinRoomMessage
 
-export type ServerMessage = ReactionMessage | LeaderboardMessage
+export type ServerMessage = ReactionMessage | LeaderboardMessage | PresenceMessage

@@ -1,10 +1,23 @@
 import Foundation
 
-/// Where the overlay connects. Resolved at connect time so a user can point the
-/// app at their own Cloudflare deployment from the menu bar, with no rebuild and
-/// nothing baked into the repository.
+enum FeatureFlags {
+    private static let developerModeKey = "peanutGallery.developerModeEnabled"
+
+    static var isDeveloperModeEnabled: Bool {
+        UserDefaults.standard.bool(forKey: developerModeKey)
+    }
+
+    static func setDeveloperModeEnabled(_ isEnabled: Bool) {
+        UserDefaults.standard.set(isEnabled, forKey: developerModeKey)
+    }
+}
+
+/// Where the overlay connects. Normal users stay on the built-in production
+/// endpoint, while developer mode can point this Mac at a custom deployment
+/// without rebuilding the app.
 enum RealtimeSettings {
     static let defaultsKey = "peanutGallery.realtimeURL"
+    static let defaultURL = "wss://gallerybutter.arcodelabs.com"
     private static let environmentKey = "PEANUT_GALLERY_REALTIME_URL"
 
     /// Set for local development. Takes precedence over the stored value, which
@@ -19,12 +32,21 @@ enum RealtimeSettings {
         return normalized(raw)
     }
 
-    /// The endpoint to connect to, or nil when the app has not been set up yet.
-    static var resolvedURL: String? { environmentOverride ?? storedURL }
+    /// The endpoint to connect to. Production is the default unless either an
+    /// environment override or a developer override is enabled.
+    static var resolvedURL: String? {
+        if let environmentOverride { return environmentOverride }
+        if FeatureFlags.isDeveloperModeEnabled, let storedURL { return storedURL }
+        return defaultURL
+    }
 
     static var isOverriddenByEnvironment: Bool { environmentOverride != nil }
 
-    static func store(_ value: String) {
+    static func store(_ value: String?) {
+        guard let value else {
+            UserDefaults.standard.removeObject(forKey: defaultsKey)
+            return
+        }
         UserDefaults.standard.set(value, forKey: defaultsKey)
     }
 

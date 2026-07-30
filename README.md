@@ -97,7 +97,9 @@ for up to a minute while the route propagates. Retry before debugging.
 
 ### 6. Point the macOS overlay at your realtime Worker
 
-Nothing to configure at build time — see [macOS overlay](#macos-overlay) below.
+Nothing to configure at build time. The macOS app defaults to the production
+Arcodelabs endpoints, and self-hosting lives behind a developer toggle in
+Settings — see [macOS overlay](#macos-overlay) below.
 
 ### Custom domains (optional)
 
@@ -112,20 +114,30 @@ config, then redeploy:
 Update `NUXT_PUBLIC_REALTIME_URL` to match, and set the new address in the
 overlay's **Set Realtime Server…** dialog.
 
+deploy — the scheme is normalised for you. Bare hosts (`my-worker.example.workers.dev`)
+
 ## macOS overlay
 
-The overlay has no endpoint compiled into it. It asks for a realtime server on
-first launch, and the same dialog stays available from the menu bar under **Set
-Realtime Server…**, so one machine can point at any deployment without a rebuild.
+The overlay now ships with the production endpoints built in:
+
+- Web reaction deck: `https://peanutgallery.arcodelabs.com`
+- Realtime WebSocket: `wss://gallerybutter.arcodelabs.com`
+
+That means a normal install can launch and join a room immediately without any
+manual setup. If you need local development or a self-hosted deployment, open
+**Settings…** from the menu bar and enable **Developer mode** to reveal the
+custom realtime server and web UI overrides.
 
 Paste either the `wss://` endpoint or the `https://` URL Wrangler prints on
 deploy — the scheme is normalised for you. Bare hosts (`my-worker.example.workers.dev`)
 and `localhost:8787` work too, the latter defaulting to `ws://` rather than `wss://`.
 
-The address is stored in `UserDefaults` under `peanutGallery.realtimeURL`. Saving
-a new server reconnects the current room immediately. The menu bar shows the
-active server and connection state, abbreviating `workers.dev` addresses to their
-account subdomain to keep the menu narrow; the full address is in the dialog.
+Developer overrides are stored in `UserDefaults` under `peanutGallery.realtimeURL`
+and `peanutGallery.webURL`. Turning developer mode off switches back to the
+Arcodelabs defaults without deleting the saved self-hosted values. The menu bar
+shows the active server and connection state, abbreviating `workers.dev`
+addresses to their account subdomain to keep the menu narrow; the full address
+is in the dialog.
 
 For local development, an environment variable takes precedence over the saved
 value:

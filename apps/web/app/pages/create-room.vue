@@ -8,7 +8,18 @@
   const roomId = ref("");
   const joinUrl = ref("");
   const copied = ref(false);
+  const presenceState = ref<
+    "connecting" | "connected" | "disconnected" | "error"
+  >("connecting");
+  const connectedCount = ref<number | null>(null);
+  const socket = ref<WebSocket | null>(null);
+  const config = useRuntimeConfig();
+  const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
+  const reconnectDelays = [1000, 2000, 5000, 10000, 15000];
   let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempt = 0;
+  let isUnmounted = false;
 
   function generateRoomId(length = 6): string {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -19,9 +30,13 @@
   }
 
   function regenerateRoom() {
+    closePresenceSocket();
     roomId.value = generateRoomId(6);
     joinUrl.value = `${window.location.origin}/join/${roomId.value}`;
     copied.value = false;
+    connectedCount.value = null;
+    reconnectAttempt = 0;
+    connectPresence();
   }
 
   async function copyRoomCode() {
@@ -44,9 +59,107 @@
     regenerateRoom();
   });
 
+  onBeforeUnmount(() => {
+    isUnmounted = true;
+    closePresenceSocket();
+  });
+
+  function connectPresence() {
+    if (
+      !roomId.value ||
+      isUnmounted ||
+      socket.value?.readyState === WebSocket.OPEN ||
+      socket.value?.readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
+
+    presenceState.value = "connecting";
+    const url = `${realtimeUrl.replace(/^http/, "ws")}/rooms/${encodeURIComponent(roomId.value)}`;
+    const connection = new WebSocket(url);
+    socket.value = connection;
+
+    connection.addEventListener("open", () => {
+      if (socket.value !== connection) return;
+      reconnectAttempt = 0;
+      presenceState.value = "connected";
+      connection.send(
+        JSON.stringify({
+          type: "join-room",
+          roomId: roomId.value,
+          clientType: "host",
+        }),
+      );
+    });
+
+    connection.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data)) as {
+          type?: string;
+          connected?: number;
+        };
+        if (
+          message.type === "presence" &&
+          typeof message.connected === "number"
+        ) {
+          connectedCount.value = message.connected;
+        }
+      } catch {
+        // Ignore malformed messages from the server.
+      }
+    });
+
+    connection.addEventListener("close", () => {
+      if (socket.value !== connection) return;
+      socket.value = null;
+      connectedCount.value = null;
+      presenceState.value = "disconnected";
+      scheduleReconnect();
+    });
+
+    connection.addEventListener("error", () => {
+      if (socket.value !== connection) return;
+      connectedCount.value = null;
+      presenceState.value = "error";
+      scheduleReconnect();
+    });
+  }
+
+  function scheduleReconnect() {
+    if (isUnmounted || reconnectTimer || !roomId.value) return;
+
+    const delay =
+      reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
+    reconnectAttempt += 1;
+    presenceState.value = "connecting";
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectPresence();
+    }, delay);
+  }
+
+  function closePresenceSocket() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    socket.value?.close();
+    socket.value = null;
+  }
+
   const qrUrl = computed(() => {
     if (!joinUrl.value) return "";
     return `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(joinUrl.value)}`;
+  });
+
+  const connectedCountLabel = computed(() => {
+    if (presenceState.value !== "connected") {
+      return "Room presence unavailable";
+    }
+    if (connectedCount.value == null) {
+      return "Counting people in room...";
+    }
+    return `${connectedCount.value} ${connectedCount.value === 1 ? "person" : "people"} connected`;
   });
 </script>
 
@@ -113,6 +226,7 @@
           </button>
         </div>
       </div>
+      <p class="presence">{{ connectedCountLabel }}</p>
       <NuxtLink :to="`/join/${roomId}`">Open deck on this device</NuxtLink>
     </div>
   </section>
@@ -203,6 +317,11 @@
     justify-content: center;
     gap: 12px;
     margin-top: 6px;
+  }
+  .presence {
+    margin-top: 12px;
+    color: #8e8273;
+    font-size: 13px;
   }
   .actions-stack {
     display: flex;
