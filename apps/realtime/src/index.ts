@@ -93,7 +93,8 @@ export class ReactionRoom extends DurableObject<Env> {
     const connected = this.ctx
       .getWebSockets()
       .reduce(
-        (total, session) => total + (this.clientTypes.get(session) === "web" ? 1 : 0),
+        (total, session) =>
+          total + (this.clientTypes.get(session) === "web" ? 1 : 0),
         0,
       );
     const message: PresenceMessage = { type: "presence", connected };
