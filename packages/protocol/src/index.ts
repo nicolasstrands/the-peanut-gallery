@@ -1,28 +1,31 @@
-export type ClientType = 'web' | 'host' | 'macos'
+export type ClientType = "web" | "host" | "macos";
 
 export type ReactionMessage = {
-  type: 'reaction'
-  emoji: string
-  reactionId: string
-  sentAt: number
-}
+  type: "reaction";
+  emoji: string;
+  reactionId: string;
+  sentAt: number;
+};
 
 export type JoinRoomMessage = {
-  type: 'join-room'
-  roomId: string
-  clientType: ClientType
-}
+  type: "join-room";
+  roomId: string;
+  clientType: ClientType;
+};
 
 export type LeaderboardMessage = {
-  type: 'leaderboard'
-  counts: Record<string, number>
-}
+  type: "leaderboard";
+  counts: Record<string, number>;
+};
 
 export type PresenceMessage = {
-  type: 'presence'
-  connected: number
-}
+  type: "presence";
+  connected: number;
+};
 
-export type ClientMessage = ReactionMessage | JoinRoomMessage
+export type ClientMessage = ReactionMessage | JoinRoomMessage;
 
-export type ServerMessage = ReactionMessage | LeaderboardMessage | PresenceMessage
+export type ServerMessage =
+  | ReactionMessage
+  | LeaderboardMessage
+  | PresenceMessage;
