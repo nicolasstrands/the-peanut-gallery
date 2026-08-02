@@ -27,6 +27,8 @@
   const pollDurationSeconds = ref(30);
   const pollError = ref("");
   const showPoll = ref(false);
+  const pollPanelRef = ref<HTMLElement | null>(null);
+  const roomPanelsRef = ref<HTMLElement | null>(null);
   const pollNow = ref(Date.now());
   const config = useRuntimeConfig();
   const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
@@ -195,6 +197,23 @@
     );
   }
 
+  async function togglePoll() {
+    showPoll.value = !showPoll.value;
+    if (showPoll.value) {
+      await nextTick();
+      pollPanelRef.value?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    }
+  }
+
+  function slideRoomPanels(direction: -1 | 1) {
+    const panels = roomPanelsRef.value;
+    if (!panels) return;
+    panels.scrollBy({
+      left: direction * (panels.clientWidth + 16),
+      behavior: "smooth",
+    });
+  }
+
   const canStartPoll = computed(
     () =>
       presenceState.value === "connected" && (connectedCount.value ?? 0) > 0,
@@ -284,7 +303,9 @@
     <h1>Your room <wbr />is live.</h1>
     <p>Anyone scanning this QR code can open the reaction deck instantly.</p>
 
-    <div class="room-panels" :class="{ 'poll-hidden': !showPoll }">
+    <div class="room-slider-shell">
+    <button v-if="showPoll" type="button" class="slider-arrow slider-arrow-left" aria-label="Previous card" @click="slideRoomPanels(-1)">‹</button>
+    <div ref="roomPanelsRef" class="room-panels" :class="{ 'poll-hidden': !showPoll }">
       <div class="card" v-if="roomId && qrUrl">
         <img class="qrcode" :src="qrUrl" :alt="`QR code for room ${roomId}`" />
         <p class="label">Room code</p>
@@ -352,14 +373,14 @@
           <button
             type="button"
             class="toggle-poll"
-            @click="showPoll = !showPoll">
+            @click="togglePoll">
             {{ showPoll ? "Hide Poll" : "Toggle Poll" }}
           </button>
         </div>
       </div>
 
       <Transition name="poll-panel" appear>
-        <div v-if="showPoll" class="poll-panel">
+        <div v-if="showPoll" ref="pollPanelRef" class="poll-panel">
           <h2>
             {{
               poll
@@ -414,7 +435,9 @@
             </button>
           </template>
         </div>
-      </Transition>
+    </Transition>
+    </div>
+    <button v-if="showPoll" type="button" class="slider-arrow slider-arrow-right" aria-label="Next card" @click="slideRoomPanels(1)">›</button>
     </div>
   </section>
 </template>
@@ -805,6 +828,12 @@
     background: #171310;
     color: #fff4df;
   }
+  .room-slider-shell {
+    position: relative;
+  }
+  .slider-arrow {
+    display: none;
+  }
   @media (max-width: 520px) {
     .room-panels {
       flex-direction: column;
@@ -822,6 +851,100 @@
     .poll-panel {
       width: calc(100% - 20px);
       padding: 18px;
+    }
+  }
+  @media (min-width: 521px) and (max-height: 800px) {
+    .room-slider-shell {
+      position: relative;
+    }
+    .slider-arrow {
+      position: absolute;
+      z-index: 5;
+      top: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 54px;
+      transform: translateY(-50%);
+      border: 1px solid #4a3b2f;
+      border-radius: 999px;
+      background: #241e1a;
+      color: #fff4df;
+      cursor: pointer;
+      font-size: 32px;
+      line-height: 1;
+    }
+    .slider-arrow:hover {
+      border-color: #f6b73c;
+      color: #f6b73c;
+    }
+    .slider-arrow-left { left: -4px; }
+    .slider-arrow-right { right: -4px; }
+    .room-panels:not(.poll-hidden) {
+      justify-content: flex-start;
+      align-items: stretch;
+      gap: 16px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      padding: 0 12px 8px;
+      box-sizing: border-box;
+    }
+    .room-panels:not(.poll-hidden)::-webkit-scrollbar {
+      display: none;
+    }
+    .room-panels:not(.poll-hidden) > .card,
+    .room-panels:not(.poll-hidden) > .poll-panel {
+      width: 100%;
+      min-width: 100%;
+      flex: none;
+      scroll-snap-align: start;
+    }
+    .room-panels .card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: 1fr auto auto auto auto 1fr;
+      column-gap: 20px;
+      align-items: center;
+      padding: 18px;
+    }
+    .room-panels .card .qrcode {
+      grid-column: 1;
+      grid-row: 1 / -1;
+      width: 100%;
+      max-width: 300px;
+    }
+    .room-panels .card .label {
+      grid-column: 2;
+      grid-row: 2;
+      margin: 0 0 4px;
+    }
+    .room-panels .card .code-row {
+      grid-column: 2;
+      grid-row: 3;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0;
+    }
+    .room-panels .card .actions-stack {
+      flex-direction: row;
+      gap: 8px;
+    }
+    .room-panels .card .status-alert {
+      grid-column: 2;
+      grid-row: 4;
+      margin: 8px auto 0;
+    }
+    .room-panels .card > a {
+      grid-column: 2;
+      grid-row: 5;
+      margin-top: 12px;
+    }
+    .room-panels .card .toggle-poll {
+      grid-column: 2;
+      grid-row: 6;
+      margin-top: 8px;
     }
   }
 </style>
