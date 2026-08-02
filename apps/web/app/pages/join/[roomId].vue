@@ -23,11 +23,13 @@
     id: string;
     question: string;
     options: { id: string; label: string }[];
+    startAt: number;
     endAt: number;
     status: "active" | "complete";
   } | null>(null);
   const selectedOptionId = ref<string | null>(null);
   const deviceFingerprint = ref("");
+  const pollNow = ref(Date.now());
   const nickname = ref("");
   const adjectives = [
     "Brave",
@@ -75,6 +77,7 @@
   let presenceRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let reconnectAttempt = 0;
   let isUnmounted = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
 
   onMounted(() => {
     const storedEmoji = localStorage.getItem(customEmojiStorageKey) ?? "";
@@ -83,11 +86,20 @@
       localStorage.removeItem(customEmojiStorageKey);
     }
 
+    const deviceKey = "peanut-gallery:device-id";
+    const localDeviceId = localStorage.getItem(deviceKey) ?? crypto.randomUUID();
+    localStorage.setItem(deviceKey, localDeviceId);
+    deviceFingerprint.value = localDeviceId;
+    nickname.value = nicknameFromFingerprint(localDeviceId);
+
     if (!roomId.value) {
       connectionState.value = "error";
       return;
     }
 
+    pollTimer = setInterval(() => {
+      pollNow.value = Date.now();
+    }, 250);
     void loadFingerprint().finally(connect);
   });
 
@@ -98,12 +110,7 @@
       nickname.value = nicknameFromFingerprint(deviceFingerprint.value);
     } catch {
       // A local fallback preserves voting if fingerprint collection fails.
-      const key = "peanut-gallery:device-id";
-      const existing = localStorage.getItem(key);
-      const id = existing || crypto.randomUUID();
-      localStorage.setItem(key, id);
-      deviceFingerprint.value = id;
-      nickname.value = nicknameFromFingerprint(id);
+      // Keep using the local identity initialized before connecting.
     }
   }
 
@@ -123,6 +130,7 @@
     if (reconnectTimer) clearTimeout(reconnectTimer);
     socket.value?.close();
     socket.value = null;
+    if (pollTimer) clearInterval(pollTimer);
   });
 
   function connect() {
@@ -298,26 +306,41 @@
     }
     return `${connectedCount.value} ${connectedCount.value === 1 ? "person" : "people"} in room`;
   });
+
+  const pollTimeLabel = computed(() => {
+    if (!poll.value || poll.value.status !== "active") return "Poll complete";
+    const remaining = Math.max(0, poll.value.endAt - pollNow.value);
+    const seconds = Math.ceil(remaining / 1000);
+    return `${seconds}s remaining`;
+  });
+
+  const pollTimeSeconds = computed(() => {
+    if (!poll.value || poll.value.status !== "active") return 0;
+    return Math.ceil(Math.max(0, poll.value.endAt - pollNow.value) / 1000);
+  });
+
+  const pollProgress = computed(() => {
+    if (!poll.value) return 0;
+    const duration = Math.max(1, poll.value.endAt - poll.value.startAt);
+    return Math.max(0, Math.min(1, (poll.value.endAt - pollNow.value) / duration));
+  });
 </script>
 
 <template>
   <section>
+    <div class="alerts-row">
+      <div v-if="poll && nickname" class="nickname-alert">You are <strong>{{ nickname }}</strong></div>
+      <div class="status-alert" :class="connectionState">
+        <span class="dot" />
+        <span class="status-count">{{ connectedCountLabel }}</span>
+      </div>
+    </div>
     <h1>{{ poll ? "Cast your vote" : "Make some noise!" }}</h1>
-    <p>{{ poll ? poll.question : "Tap a reaction. Spam responsibly." }}</p>
-    <p v-if="nickname" class="nickname">You are <strong>{{ nickname }}</strong></p>
-    <p class="connection" :class="connectionState">
-      <span class="dot" />
-      {{
-        connectionState === "connected"
-          ? "Connected"
-          : connectionState === "connecting"
-            ? "Connecting…"
-            : connectionState === "error"
-              ? "Unable to connect"
-              : "Disconnected"
-      }}
-    </p>
-    <p class="presence">{{ connectedCountLabel }}</p>
+    <p v-if="poll" class="poll-question">{{ poll.question }}</p>
+    <p v-else class="subtitle">Tap a reaction. Spam responsibly.</p>
+    <div v-if="poll" class="poll-timer" :style="{ '--poll-progress': pollProgress }">
+      <strong>{{ pollTimeSeconds }}</strong><span>SECONDS</span>
+    </div>
     <div v-if="poll" class="grid poll-options">
       <button
         v-for="option in poll.options"
@@ -419,11 +442,19 @@
   .nickname strong {
     color: #fff4df;
   }
+  .poll-timer {
+    margin-top: 12px;
+    color: #f6b73c !important;
+    font-size: 14px;
+    font-weight: 800;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-top: 32px;
+    justify-items: center;
+    justify-content: center;
   }
   button {
     transition: all 0.1s ease-in-out;
@@ -480,9 +511,14 @@
   }
   .poll-options button {
     aspect-ratio: auto;
+    width: 100%;
+    max-width: 280px;
     min-height: 72px;
     padding: 16px;
     font-size: 20px;
+  }
+  .poll-options {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 280px));
   }
   .poll-options button.selected {
     border-color: #f6b73c;
@@ -494,5 +530,112 @@
     margin-top: 32px;
     min-height: 36px;
     font-size: 24px;
+  }
+  .subtitle {
+    color: #b5a792;
+  }
+  .nickname-alert,
+  .status-alert {
+    display: flex;
+    width: fit-content;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border: 1px solid #4a3b2f;
+    border-radius: 999px;
+    padding: 9px 16px;
+    background: #241e1a;
+    color: #f6b73c;
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .alerts-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 8px auto 18px;
+  }
+  .nickname-alert {
+    margin: 0;
+  }
+  .nickname-alert strong {
+    color: #fff4df;
+  }
+  .poll-question {
+    margin: 12px auto 10px;
+    text-align: center;
+    color: #fff4df !important;
+    font-size: clamp(22px, 5vw, 32px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+  .poll-timer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    width: 86px;
+    height: 86px;
+    margin: 14px auto 18px;
+    border-radius: 50%;
+    background: conic-gradient(#f6b73c calc(var(--poll-progress) * 1turn), #4a3b2f 0);
+    color: #fff4df;
+    position: relative;
+  }
+  .poll-timer::before {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    background: #171310;
+  }
+  .poll-timer strong,
+  .poll-timer span {
+    position: relative;
+    z-index: 1;
+  }
+  .poll-timer strong {
+    font-size: 24px;
+    line-height: 1;
+  }
+  .poll-timer span {
+    margin-top: 4px;
+    color: #b5a792;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+  }
+  .status-alert {
+    margin: 0;
+    color: #72d572;
+  }
+  .status-alert.connecting { color: #f6b73c; }
+  .status-alert.disconnected,
+  .status-alert.error { color: #e98470; }
+  .status-alert.connected .dot {
+    animation: connected-pulse 1.8s ease-in-out infinite;
+  }
+  .status-main,
+  .status-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .status-count {
+    color: #b5a792;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  @media (max-width: 520px) {
+    .alerts-row {
+      gap: 8px;
+    }
+  }
+  @keyframes connected-pulse {
+    0%,
+    100% { box-shadow: 0 0 0 0 rgb(114 213 114 / 45%); }
+    50% { box-shadow: 0 0 0 5px rgb(114 213 114 / 0%); }
   }
 </style>

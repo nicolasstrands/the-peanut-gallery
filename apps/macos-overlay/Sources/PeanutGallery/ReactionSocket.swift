@@ -24,6 +24,26 @@ struct ReactionMessage: Decodable {
     let counts: [String: Int]?
 }
 
+struct PollOption: Decodable {
+    let id: String
+    let label: String
+}
+
+struct PollState: Decodable {
+    let id: String
+    let question: String
+    let options: [PollOption]
+    let startAt: Int64
+    let endAt: Int64
+    let status: String
+    let tally: [String: Int]?
+}
+
+struct PollStateMessage: Decodable {
+    let type: String
+    let poll: PollState?
+}
+
 final class ReactionSocket {
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
@@ -34,16 +54,19 @@ final class ReactionSocket {
 
     private let onReaction: (String) -> Void
     private let onLeaderboard: ([String: Int]) -> Void
+    private let onPollState: (PollState?) -> Void
     private let onStateChange: (ReactionConnectionState) -> Void
     private let session = URLSession(configuration: .default)
 
     init(
         onReaction: @escaping (String) -> Void,
         onLeaderboard: @escaping ([String: Int]) -> Void,
+        onPollState: @escaping (PollState?) -> Void,
         onStateChange: @escaping (ReactionConnectionState) -> Void
     ) {
         self.onReaction = onReaction
         self.onLeaderboard = onLeaderboard
+        self.onPollState = onPollState
         self.onStateChange = onStateChange
     }
 
@@ -123,6 +146,11 @@ final class ReactionSocket {
                    let message = try? JSONDecoder().decode(ReactionMessage.self, from: data),
                    message.type == "leaderboard", let counts = message.counts {
                     self.onLeaderboard(counts)
+                }
+                if let data = text.data(using: .utf8),
+                   let message = try? JSONDecoder().decode(PollStateMessage.self, from: data),
+                   message.type == "poll-state" {
+                    self.onPollState(message.poll)
                 }
                 self.listen(on: connection)
             case .success(.data):

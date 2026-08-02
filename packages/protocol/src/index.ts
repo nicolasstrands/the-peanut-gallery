@@ -11,6 +11,7 @@ export type PollState = {
   id: string;
   question: string;
   options: PollOption[];
+  startAt: number;
   endAt: number;
   status: PollStatus;
   tally?: Record<string, number>;

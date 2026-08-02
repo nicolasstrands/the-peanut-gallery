@@ -61,6 +61,7 @@ export class ReactionRoom extends DurableObject<Env> {
 
     if (parsed.type === "join-room") {
       this.clientTypes.set(ws, parsed.clientType);
+      ws.serializeAttachment({ clientType: parsed.clientType });
       if (parsed.clientType === "host" && !this.hostSocket) this.hostSocket = ws;
       this.sendLeaderboard(ws);
       this.sendPollState(ws);
@@ -74,11 +75,12 @@ export class ReactionRoom extends DurableObject<Env> {
     }
 
     if (parsed.type === "poll-start") {
-      if (!this.isHost(ws) || this.poll || !this.isValidPollStart(parsed)) return;
+      if (!this.isHost(ws) || this.poll || !this.hasParticipants() || !this.isValidPollStart(parsed)) return;
       this.poll = {
         id: parsed.pollId,
         question: parsed.question.trim(),
         options: parsed.options,
+        startAt: Date.now(),
         endAt: Date.now() + parsed.durationMs,
         status: "active",
       };
@@ -100,7 +102,9 @@ export class ReactionRoom extends DurableObject<Env> {
     }
 
     if (parsed.type === "poll-dismiss") {
-      if (!this.isHost(ws) || !this.poll || parsed.pollId !== this.poll.id) return;
+      // Dismissal must continue to work if the Durable Object was rehydrated
+      // and the original host WebSocket reference is no longer in memory.
+      if (this.clientType(ws) !== "host" || !this.poll || parsed.pollId !== this.poll.id) return;
       this.poll = null;
       this.pollVotes = {};
       await this.persistPoll();
@@ -144,14 +148,14 @@ export class ReactionRoom extends DurableObject<Env> {
   }
 
   private sendPollState(ws: WebSocket) {
-    const message = this.pollStateMessage(this.clientTypes.get(ws));
+    const message = this.pollStateMessage(this.clientType(ws));
     ws.send(JSON.stringify(message));
   }
 
   private broadcastPollState() {
     for (const session of this.ctx.getWebSockets()) {
       try {
-        session.send(JSON.stringify(this.pollStateMessage(this.clientTypes.get(session))));
+        session.send(JSON.stringify(this.pollStateMessage(this.clientType(session))));
       } catch {
         // Ignore sessions that are closing while we broadcast.
       }
@@ -181,7 +185,30 @@ export class ReactionRoom extends DurableObject<Env> {
   }
 
   private isHost(ws: WebSocket) {
-    return this.hostSocket === ws && this.clientTypes.get(ws) === "host";
+    if (this.clientType(ws) !== "host") return false;
+    if (this.hostSocket === ws) return true;
+
+    // The Durable Object may be rehydrated between messages. In that case the
+    // in-memory socket reference is gone, so recover ownership from the first
+    // currently connected host client in this room.
+    if (!this.hostSocket || !this.ctx.getWebSockets().includes(this.hostSocket)) {
+      this.hostSocket = ws;
+      return true;
+    }
+    return false;
+  }
+
+  private hasParticipants() {
+    return this.ctx
+      .getWebSockets()
+      .some((session) => this.clientType(session) === "web");
+  }
+
+  private clientType(ws: WebSocket) {
+    const inMemoryType = this.clientTypes.get(ws);
+    if (inMemoryType) return inMemoryType;
+    const attachment = ws.deserializeAttachment() as { clientType?: ClientType } | null;
+    return attachment?.clientType;
   }
 
   private isValidPollStart(message: ClientMessage): message is Extract<ClientMessage, { type: "poll-start" }> {
@@ -222,7 +249,7 @@ export class ReactionRoom extends DurableObject<Env> {
       .getWebSockets()
       .reduce(
         (total, session) =>
-          total + (this.clientTypes.get(session) === "web" ? 1 : 0),
+          total + (this.clientType(session) === "web" ? 1 : 0),
         0,
       );
     const message: PresenceMessage = { type: "presence", connected };
