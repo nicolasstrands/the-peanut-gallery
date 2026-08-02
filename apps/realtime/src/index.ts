@@ -3,6 +3,8 @@ import type {
   ClientType,
   ClientMessage,
   LeaderboardMessage,
+  PollState,
+  PollStateMessage,
   PresenceMessage,
   ReactionMessage,
 } from "@peanut-gallery/protocol";
@@ -15,10 +17,13 @@ export class ReactionRoom extends DurableObject<Env> {
   private static readonly maxReactionsPerSecond = 120;
   private static readonly leaderboardBroadcastIntervalMs = 100;
   private counts: Record<string, number> = {};
+  private poll: PollState | null = null;
+  private pollVotes: Record<string, string> = {};
   private readonly countsLoaded: Promise<void>;
   private readonly reactionTimestamps = new WeakMap<WebSocket, number[]>();
   private readonly clientTypes = new WeakMap<WebSocket, ClientType>();
   private leaderboardBroadcastScheduled = false;
+  private hostSocket: WebSocket | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -26,6 +31,10 @@ export class ReactionRoom extends DurableObject<Env> {
       .get<Record<string, number>>("leaderboard")
       .then((counts) => {
         if (counts) this.counts = counts;
+      })
+      .then(async () => {
+        this.poll = (await ctx.storage.get<PollState>("poll")) ?? null;
+        this.pollVotes = (await ctx.storage.get<Record<string, string>>("poll-votes")) ?? {};
       });
   }
 
@@ -52,13 +61,51 @@ export class ReactionRoom extends DurableObject<Env> {
 
     if (parsed.type === "join-room") {
       this.clientTypes.set(ws, parsed.clientType);
+      if (parsed.clientType === "host" && !this.hostSocket) this.hostSocket = ws;
       this.sendLeaderboard(ws);
+      this.sendPollState(ws);
       this.broadcastPresence();
       return;
     }
 
     if (parsed.type === "presence-sync") {
       this.broadcastPresence();
+      return;
+    }
+
+    if (parsed.type === "poll-start") {
+      if (!this.isHost(ws) || this.poll || !this.isValidPollStart(parsed)) return;
+      this.poll = {
+        id: parsed.pollId,
+        question: parsed.question.trim(),
+        options: parsed.options,
+        endAt: Date.now() + parsed.durationMs,
+        status: "active",
+      };
+      this.pollVotes = {};
+      await this.persistPoll();
+      await this.ctx.storage.setAlarm(this.poll.endAt);
+      this.broadcastPollState();
+      return;
+    }
+
+    if (parsed.type === "poll-vote") {
+      if (!this.poll || this.poll.status !== "active" || parsed.pollId !== this.poll.id) return;
+      if (Date.now() >= this.poll.endAt || !this.isValidPollVote(parsed)) return;
+      if (!this.poll.options.some((option) => option.id === parsed.optionId)) return;
+      this.pollVotes[await this.fingerprintKey(parsed.fingerprint)] = parsed.optionId;
+      await this.persistPoll();
+      this.broadcastPollState();
+      return;
+    }
+
+    if (parsed.type === "poll-dismiss") {
+      if (!this.isHost(ws) || !this.poll || parsed.pollId !== this.poll.id) return;
+      this.poll = null;
+      this.pollVotes = {};
+      await this.persistPoll();
+      await this.ctx.storage.deleteAlarm();
+      this.broadcastPollState();
       return;
     }
 
@@ -78,11 +125,13 @@ export class ReactionRoom extends DurableObject<Env> {
 
   webSocketClose(ws: WebSocket) {
     this.clientTypes.delete(ws);
+    if (this.hostSocket === ws) this.hostSocket = null;
     this.broadcastPresence();
   }
 
   webSocketError(ws: WebSocket) {
     this.clientTypes.delete(ws);
+    if (this.hostSocket === ws) this.hostSocket = null;
     this.broadcastPresence();
   }
 
@@ -92,6 +141,80 @@ export class ReactionRoom extends DurableObject<Env> {
       counts: this.counts,
     };
     ws.send(JSON.stringify(message));
+  }
+
+  private sendPollState(ws: WebSocket) {
+    const message = this.pollStateMessage(this.clientTypes.get(ws));
+    ws.send(JSON.stringify(message));
+  }
+
+  private broadcastPollState() {
+    for (const session of this.ctx.getWebSockets()) {
+      try {
+        session.send(JSON.stringify(this.pollStateMessage(this.clientTypes.get(session))));
+      } catch {
+        // Ignore sessions that are closing while we broadcast.
+      }
+    }
+  }
+
+  private pollStateMessage(clientType?: ClientType): PollStateMessage {
+    if (!this.poll) return { type: "poll-state", poll: null };
+    const poll = { ...this.poll };
+    if (clientType === "host" || clientType === "macos") {
+      poll.tally = this.tallyPoll();
+    }
+    return { type: "poll-state", poll };
+  }
+
+  private tallyPoll() {
+    return Object.values(this.pollVotes).reduce<Record<string, number>>((tally, optionId) => {
+      tally[optionId] = (tally[optionId] ?? 0) + 1;
+      return tally;
+    }, {});
+  }
+
+  private async persistPoll() {
+    if (this.poll) await this.ctx.storage.put("poll", this.poll);
+    else await this.ctx.storage.delete("poll");
+    await this.ctx.storage.put("poll-votes", this.pollVotes);
+  }
+
+  private isHost(ws: WebSocket) {
+    return this.hostSocket === ws && this.clientTypes.get(ws) === "host";
+  }
+
+  private isValidPollStart(message: ClientMessage): message is Extract<ClientMessage, { type: "poll-start" }> {
+    return message.type === "poll-start" &&
+      typeof message.pollId === "string" && message.pollId.length > 0 &&
+      typeof message.question === "string" && message.question.trim().length > 0 && message.question.length <= 240 &&
+      Number.isInteger(message.durationMs) && message.durationMs >= 1000 && message.durationMs <= 86400000 &&
+      Array.isArray(message.options) && message.options.length >= 2 && message.options.length <= 12 &&
+      message.options.every((option) => typeof option.id === "string" && option.id.length > 0 &&
+        typeof option.label === "string" && option.label.trim().length > 0 && option.label.length <= 80);
+  }
+
+  private isValidPollVote(message: ClientMessage): message is Extract<ClientMessage, { type: "poll-vote" }> {
+    return message.type === "poll-vote" &&
+      typeof message.fingerprint === "string" && message.fingerprint.length >= 8 && message.fingerprint.length <= 512 &&
+      typeof message.optionId === "string" && message.optionId.length > 0;
+  }
+
+  private async fingerprintKey(fingerprint: string) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(fingerprint));
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async alarm() {
+    await this.countsLoaded;
+    if (!this.poll || this.poll.status !== "active") return;
+    if (Date.now() < this.poll.endAt) {
+      await this.ctx.storage.setAlarm(this.poll.endAt);
+      return;
+    }
+    this.poll.status = "complete";
+    await this.persistPoll();
+    this.broadcastPollState();
   }
 
   private broadcastPresence() {

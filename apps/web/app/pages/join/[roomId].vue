@@ -1,4 +1,6 @@
 <script setup lang="ts">
+  import FingerprintJS from "@fingerprintjs/fingerprintjs";
+
   useSeoMeta({
     title: "Join Room",
     description:
@@ -17,6 +19,52 @@
   >("connecting");
   const connectedCount = ref<number | null>(null);
   const socket = ref<WebSocket | null>(null);
+  const poll = ref<{
+    id: string;
+    question: string;
+    options: { id: string; label: string }[];
+    endAt: number;
+    status: "active" | "complete";
+  } | null>(null);
+  const selectedOptionId = ref<string | null>(null);
+  const deviceFingerprint = ref("");
+  const nickname = ref("");
+  const adjectives = [
+    "Brave",
+    "Clever",
+    "Cosmic",
+    "Dazzling",
+    "Fierce",
+    "Golden",
+    "Jolly",
+    "Lucky",
+    "Mighty",
+    "Nimble",
+    "Quiet",
+    "Swift",
+  ];
+  const animalsAndColors = [
+    "Badger",
+    "Bear",
+    "Blue",
+    "Cardinal",
+    "Coral",
+    "Crimson",
+    "Dolphin",
+    "Fox",
+    "Green",
+    "Jaguar",
+    "Koala",
+    "Lynx",
+    "Otter",
+    "Panther",
+    "Purple",
+    "Raven",
+    "Red",
+    "Tiger",
+    "Wolf",
+    "Yellow",
+  ];
 
   const roomId = computed(() => String(route.params.roomId ?? ""));
   const config = useRuntimeConfig();
@@ -40,8 +88,34 @@
       return;
     }
 
-    connect();
+    void loadFingerprint().finally(connect);
   });
+
+  async function loadFingerprint() {
+    try {
+      const agent = await FingerprintJS.load();
+      deviceFingerprint.value = (await agent.get()).visitorId;
+      nickname.value = nicknameFromFingerprint(deviceFingerprint.value);
+    } catch {
+      // A local fallback preserves voting if fingerprint collection fails.
+      const key = "peanut-gallery:device-id";
+      const existing = localStorage.getItem(key);
+      const id = existing || crypto.randomUUID();
+      localStorage.setItem(key, id);
+      deviceFingerprint.value = id;
+      nickname.value = nicknameFromFingerprint(id);
+    }
+  }
+
+  function nicknameFromFingerprint(fingerprint: string) {
+    let hash = 2166136261;
+    for (const character of fingerprint) {
+      hash ^= character.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    const unsignedHash = hash >>> 0;
+    return `${adjectives[unsignedHash % adjectives.length]}${animalsAndColors[Math.floor(unsignedHash / adjectives.length) % animalsAndColors.length]}`;
+  }
 
   onBeforeUnmount(() => {
     isUnmounted = true;
@@ -79,6 +153,7 @@
           type?: string;
           emoji?: string;
           connected?: number;
+          poll?: typeof poll.value;
         };
         if (message.type === "reaction" && typeof message.emoji === "string") {
           sent.value.unshift(message.emoji);
@@ -89,6 +164,10 @@
           typeof message.connected === "number"
         ) {
           connectedCount.value = message.connected;
+        }
+        if (message.type === "poll-state") {
+          poll.value = message.poll ?? null;
+          if (!poll.value) selectedOptionId.value = null;
         }
       } catch {
         // Ignore malformed messages from the server.
@@ -160,7 +239,7 @@
   }
 
   function react(emoji: string) {
-    if (socket.value?.readyState !== WebSocket.OPEN) return;
+    if (poll.value || socket.value?.readyState !== WebSocket.OPEN) return;
 
     socket.value.send(
       JSON.stringify({
@@ -170,6 +249,17 @@
         sentAt: Date.now(),
       }),
     );
+  }
+
+  function vote(optionId: string) {
+    if (!poll.value || poll.value.status !== "active" || !deviceFingerprint.value) return;
+    selectedOptionId.value = optionId;
+    socket.value?.send(JSON.stringify({
+      type: "poll-vote",
+      pollId: poll.value.id,
+      optionId,
+      fingerprint: deviceFingerprint.value,
+    }));
   }
 
   function useCustomReaction() {
@@ -212,8 +302,9 @@
 
 <template>
   <section>
-    <h1>Make some noise!</h1>
-    <p>Tap a reaction. Spam responsibly.</p>
+    <h1>{{ poll ? "Cast your vote" : "Make some noise!" }}</h1>
+    <p>{{ poll ? poll.question : "Tap a reaction. Spam responsibly." }}</p>
+    <p v-if="nickname" class="nickname">You are <strong>{{ nickname }}</strong></p>
     <p class="connection" :class="connectionState">
       <span class="dot" />
       {{
@@ -227,7 +318,17 @@
       }}
     </p>
     <p class="presence">{{ connectedCountLabel }}</p>
-    <div class="grid">
+    <div v-if="poll" class="grid poll-options">
+      <button
+        v-for="option in poll.options"
+        :key="option.id"
+        :disabled="connectionState !== 'connected' || poll.status !== 'active'"
+        :class="{ selected: selectedOptionId === option.id }"
+        @click="vote(option.id)">
+        {{ option.label }}
+      </button>
+    </div>
+    <div v-else class="grid">
       <button
         v-for="emoji in reactions"
         :key="emoji"
@@ -310,6 +411,14 @@
     font-size: 13px;
     color: #8e8273;
   }
+  .nickname {
+    margin-top: 18px;
+    color: #f6b73c !important;
+    font-size: 14px;
+  }
+  .nickname strong {
+    color: #fff4df;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -368,6 +477,16 @@
   button:active {
     transform: scale(0.98) translateY(2px);
     border-bottom-width: 1px;
+  }
+  .poll-options button {
+    aspect-ratio: auto;
+    min-height: 72px;
+    padding: 16px;
+    font-size: 20px;
+  }
+  .poll-options button.selected {
+    border-color: #f6b73c;
+    background: #49351d;
   }
   .recent {
     display: none;

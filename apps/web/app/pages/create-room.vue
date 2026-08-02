@@ -13,6 +13,18 @@
   >("connecting");
   const connectedCount = ref<number | null>(null);
   const socket = ref<WebSocket | null>(null);
+  const poll = ref<{
+    id: string;
+    question: string;
+    options: { id: string; label: string }[];
+    endAt: number;
+    status: "active" | "complete";
+    tally?: Record<string, number>;
+  } | null>(null);
+  const pollQuestion = ref("");
+  const pollOptions = ref("Yes\nNo");
+  const pollDurationSeconds = ref(30);
+  const pollError = ref("");
   const config = useRuntimeConfig();
   const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
   const presenceRefreshIntervalMs = 15000;
@@ -94,6 +106,7 @@
         const message = JSON.parse(String(event.data)) as {
           type?: string;
           connected?: number;
+          poll?: typeof poll.value;
         };
         if (
           message.type === "presence" &&
@@ -101,6 +114,7 @@
         ) {
           connectedCount.value = message.connected;
         }
+        if (message.type === "poll-state") poll.value = message.poll ?? null;
       } catch {
         // Ignore malformed messages from the server.
       }
@@ -141,6 +155,32 @@
         type: "presence-sync",
       }),
     );
+  }
+
+  function startPoll() {
+    pollError.value = "";
+    const question = pollQuestion.value.trim();
+    const options = pollOptions.value
+      .split("\n")
+      .map((label) => label.trim())
+      .filter(Boolean)
+      .map((label, index) => ({ id: `option-${index + 1}`, label }));
+    if (!question || options.length < 2 || options.length > 12) {
+      pollError.value = "Add a question and between 2 and 12 answers.";
+      return;
+    }
+    socket.value?.send(JSON.stringify({
+      type: "poll-start",
+      pollId: crypto.randomUUID(),
+      question,
+      options,
+      durationMs: Math.max(1, pollDurationSeconds.value) * 1000,
+    }));
+  }
+
+  function dismissPoll() {
+    if (!poll.value) return;
+    socket.value?.send(JSON.stringify({ type: "poll-dismiss", pollId: poll.value.id }));
   }
 
   function startPresenceRefreshTimer(connection: WebSocket) {
@@ -261,6 +301,24 @@
       </div>
       <p class="presence">{{ connectedCountLabel }}</p>
       <NuxtLink :to="`/join/${roomId}`">Open deck on this device</NuxtLink>
+    </div>
+
+    <div class="poll-panel">
+      <h2>{{ poll ? (poll.status === "active" ? "Poll in progress" : "Poll results") : "Start a poll" }}</h2>
+      <template v-if="!poll">
+        <label>Question <input v-model="pollQuestion" placeholder="What should we do next?" /></label>
+        <label>Answers <textarea v-model="pollOptions" rows="4" /></label>
+        <label>Duration (seconds) <input v-model.number="pollDurationSeconds" type="number" min="1" max="86400" /></label>
+        <p v-if="pollError" class="poll-error">{{ pollError }}</p>
+        <button type="button" @click="startPoll" :disabled="presenceState !== 'connected'">Start poll</button>
+      </template>
+      <template v-else>
+        <p>{{ poll.question }}</p>
+        <ul>
+          <li v-for="option in poll.options" :key="option.id">{{ option.label }}: {{ poll.tally?.[option.id] ?? 0 }}</li>
+        </ul>
+        <button v-if="poll.status === 'complete'" type="button" @click="dismissPoll">Dismiss results</button>
+      </template>
     </div>
   </section>
 </template>
