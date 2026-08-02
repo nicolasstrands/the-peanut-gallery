@@ -24,13 +24,17 @@ final class LeaderboardController {
     func update(counts: [String: Int]) {
         panel?.leaderboardView.update(counts: counts)
     }
+
+    func update(poll: PollState?) {
+        panel?.leaderboardView.update(poll: poll)
+    }
 }
 
 final class LeaderboardPanel: NSPanel {
     let leaderboardView: LeaderboardView
 
     init(screen: NSScreen) {
-            let size = NSSize(width: 220, height: 240)
+            let size = NSSize(width: 280, height: 300)
         let frame = NSRect(
             x: screen.visibleFrame.maxX - size.width - 24,
             y: screen.visibleFrame.maxY - size.height - 24,
@@ -58,10 +62,17 @@ final class LeaderboardPanel: NSPanel {
 
     final class LeaderboardView: NSView {
         private var counts: [String: Int] = [:]
+        private var poll: PollState?
         private var dragStart: NSPoint?
 
         func update(counts: [String: Int]) {
             self.counts = counts
+            self.poll = nil
+            needsDisplay = true
+        }
+
+        func update(poll: PollState?) {
+            self.poll = poll
             needsDisplay = true
         }
 
@@ -105,10 +116,15 @@ final class LeaderboardPanel: NSPanel {
             .font: NSFont.boldSystemFont(ofSize: 16),
             .foregroundColor: NSColor(calibratedWhite: 0.98, alpha: 1)
         ]
-        NSString(string: "Leaderboard").draw(
+        NSString(string: poll == nil ? "Leaderboard" : "Poll").draw(
             at: NSPoint(x: 18, y: bounds.maxY - 34),
             withAttributes: titleAttributes
         )
+
+        if let poll {
+            drawPoll(poll, in: bounds)
+            return
+        }
 
         let rows = counts.sorted { left, right in
             if left.value == right.value { return left.key < right.key }
@@ -157,6 +173,42 @@ final class LeaderboardPanel: NSPanel {
                 at: NSPoint(x: bounds.maxX - 18 - countSize.width, y: y + 5),
                 withAttributes: countAttributes
             )
+        }
+    }
+
+    private func drawPoll(_ poll: PollState, in bounds: NSRect) {
+            let questionAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 13),
+                .foregroundColor: NSColor(calibratedWhite: 0.94, alpha: 1)
+            ]
+            NSString(string: poll.question).draw(
+                in: NSRect(x: 18, y: bounds.maxY - 78, width: bounds.width - 36, height: 38),
+                withAttributes: questionAttributes
+            )
+
+            let tally = poll.tally ?? [:]
+            let rankedOptions = poll.options.sorted {
+                let leftCount = tally[$0.id] ?? 0
+                let rightCount = tally[$1.id] ?? 0
+                return leftCount == rightCount ? $0.label < $1.label : leftCount > rightCount
+            }.prefix(5)
+            let optionAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.white
+            ]
+            let countAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.boldSystemFont(ofSize: 13),
+                .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 1)
+            ]
+        for (index, option) in rankedOptions.enumerated() {
+            let y = bounds.maxY - 126 - CGFloat(index * 30)
+            NSString(string: "\(index + 1). \(option.label)").draw(
+                in: NSRect(x: 18, y: y, width: bounds.width - 68, height: 20),
+                withAttributes: optionAttributes
+            )
+            let count = NSString(string: "\(tally[option.id] ?? 0)")
+            let size = count.size(withAttributes: countAttributes)
+            count.draw(at: NSPoint(x: bounds.maxX - 18 - size.width, y: y), withAttributes: countAttributes)
         }
     }
 }

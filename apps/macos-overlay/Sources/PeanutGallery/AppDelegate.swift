@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self?.overlayController.add(emoji: emoji) }
         }, onLeaderboard: { [weak self] counts in
             DispatchQueue.main.async { self?.leaderboardController.update(counts: counts) }
+        }, onPollState: { [weak self] poll in
+            DispatchQueue.main.async { self?.leaderboardController.update(poll: poll) }
         }, onStateChange: { [weak self] state in
             DispatchQueue.main.async { self?.updateConnectionStatus(state) }
         })
