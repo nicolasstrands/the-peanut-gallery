@@ -24,6 +24,6 @@
     @apply w-full min-h-screen flex items-center justify-center;
   }
   .shell {
-    @apply mx-auto max-w-190 flex flex-col items-center justify-center;
+    @apply mx-auto min-w-[90vw] flex flex-col items-center justify-center;
   }
 </style>
