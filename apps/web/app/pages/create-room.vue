@@ -201,7 +201,11 @@
     showPoll.value = !showPoll.value;
     if (showPoll.value) {
       await nextTick();
-      pollPanelRef.value?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+      pollPanelRef.value?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "start",
+      });
     }
   }
 
@@ -304,140 +308,161 @@
     <p>Anyone scanning this QR code can open the reaction deck instantly.</p>
 
     <div class="room-slider-shell">
-    <button v-if="showPoll" type="button" class="slider-arrow slider-arrow-left" aria-label="Previous card" @click="slideRoomPanels(-1)">‹</button>
-    <div ref="roomPanelsRef" class="room-panels" :class="{ 'poll-hidden': !showPoll }">
-      <div class="card" v-if="roomId && qrUrl">
-        <img class="qrcode" :src="qrUrl" :alt="`QR code for room ${roomId}`" />
-        <p class="label">Room code</p>
-        <div class="code-row">
-          <p class="code">{{ roomId }}</p>
-          <div class="actions-stack">
-            <button
-              type="button"
-              class="icon-button"
-              @click="copyRoomCode"
-              :aria-label="copied ? 'Room code copied' : 'Copy room code'"
-              :title="copied ? 'Copied' : 'Copy room code'">
-              <svg v-if="!copied" viewBox="0 0 24 24" aria-hidden="true">
-                <rect
-                  x="9"
-                  y="9"
-                  width="10"
-                  height="10"
-                  rx="2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8" />
-                <path
-                  d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M20 7 9 18l-5-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="icon-button"
-              @click="regenerateRoom"
-              aria-label="Regenerate room code"
-              title="Regenerate room code">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32m0 0V19m0-3.68h3.68M4 12a8 8 0 0 1 13.66-5.66L20 8.68m0 0V5m0 3.68h-3.68"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex flex-col gap-3">
-          <div class="status-alert" :class="presenceState">
-            <span class="dot" />
-            <span class="status-count">{{ connectedCountLabel }}</span>
-          </div>
-          <NuxtLink :to="`/join/${roomId}`">Open deck on this device</NuxtLink>
-          <button
-            type="button"
-            class="toggle-poll"
-            @click="togglePoll">
-            {{ showPoll ? "Hide Poll" : "Toggle Poll" }}
-          </button>
-        </div>
-      </div>
-
-      <Transition name="poll-panel" appear>
-        <div v-if="showPoll" ref="pollPanelRef" class="poll-panel">
-          <h2>
-            {{
-              poll
-                ? poll.status === "active"
-                  ? "Poll in progress"
-                  : "Poll results"
-                : "Start a poll"
-            }}
-          </h2>
-          <template v-if="!poll">
-            <label
-              >Question
-              <textarea
-                class="question-input"
-                v-model="pollQuestion"
-                rows="1"
-                placeholder="What should we do next?"
-                @input="resizeQuestionInput" />
-            </label>
-            <label>Answers <textarea v-model="pollOptions" rows="4" /></label>
-            <label
-              >Duration (seconds)
-              <input
-                v-model.number="pollDurationSeconds"
-                type="number"
-                min="1"
-                max="86400"
-            /></label>
-            <p v-if="pollError" class="poll-error">{{ pollError }}</p>
-            <button type="button" @click="startPoll" :disabled="!canStartPoll">
-              {{ canStartPoll ? "Start poll" : "Waiting for participants.." }}
-            </button>
-          </template>
-          <template v-else>
-            <p class="poll-question">{{ poll.question }}</p>
-            <div
-              class="poll-timer"
-              :style="{ '--poll-progress': pollProgress }">
-              <strong>{{ pollTimeSeconds }}</strong
-              ><span>SECONDS</span>
+      <button
+        v-if="showPoll"
+        type="button"
+        class="slider-arrow slider-arrow-left"
+        aria-label="Previous card"
+        @click="slideRoomPanels(-1)">
+        ‹
+      </button>
+      <div
+        ref="roomPanelsRef"
+        class="room-panels"
+        :class="{ 'poll-hidden': !showPoll }">
+        <div class="card" v-if="roomId && qrUrl">
+          <img
+            class="qrcode"
+            :src="qrUrl"
+            :alt="`QR code for room ${roomId}`" />
+          <p class="label">Room code</p>
+          <div class="code-row">
+            <p class="code">{{ roomId }}</p>
+            <div class="actions-stack">
+              <button
+                type="button"
+                class="icon-button"
+                @click="copyRoomCode"
+                :aria-label="copied ? 'Room code copied' : 'Copy room code'"
+                :title="copied ? 'Copied' : 'Copy room code'">
+                <svg v-if="!copied" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect
+                    x="9"
+                    y="9"
+                    width="10"
+                    height="10"
+                    rx="2"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8" />
+                  <path
+                    d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M20 7 9 18l-5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="icon-button"
+                @click="regenerateRoom"
+                aria-label="Regenerate room code"
+                title="Regenerate room code">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32m0 0V19m0-3.68h3.68M4 12a8 8 0 0 1 13.66-5.66L20 8.68m0 0V5m0 3.68h-3.68"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round" />
+                </svg>
+              </button>
             </div>
-            <ul>
-              <li v-for="option in poll.options" :key="option.id">
-                {{ option.label }}: {{ poll.tally?.[option.id] ?? 0 }}
-              </li>
-            </ul>
-            <button
-              v-if="poll.status === 'complete'"
-              type="button"
-              @click="dismissPoll">
-              Dismiss results
+          </div>
+          <div class="flex flex-col gap-3">
+            <div class="status-alert" :class="presenceState">
+              <span class="dot" />
+              <span class="status-count">{{ connectedCountLabel }}</span>
+            </div>
+            <NuxtLink :to="`/join/${roomId}`"
+              >Open deck on this device</NuxtLink
+            >
+            <button type="button" class="toggle-poll" @click="togglePoll">
+              {{ showPoll ? "Hide Poll" : "Toggle Poll" }}
             </button>
-          </template>
+          </div>
         </div>
-    </Transition>
-    </div>
-    <button v-if="showPoll" type="button" class="slider-arrow slider-arrow-right" aria-label="Next card" @click="slideRoomPanels(1)">›</button>
+
+        <Transition name="poll-panel" appear>
+          <div v-if="showPoll" ref="pollPanelRef" class="poll-panel">
+            <h2>
+              {{
+                poll
+                  ? poll.status === "active"
+                    ? "Poll in progress"
+                    : "Poll results"
+                  : "Start a poll"
+              }}
+            </h2>
+            <template v-if="!poll">
+              <label
+                >Question
+                <textarea
+                  class="question-input"
+                  v-model="pollQuestion"
+                  rows="1"
+                  placeholder="What should we do next?" />
+              </label>
+              <label>Answers <textarea v-model="pollOptions" rows="4" /></label>
+              <label
+                >Duration (seconds)
+                <input
+                  v-model.number="pollDurationSeconds"
+                  type="number"
+                  min="1"
+                  max="86400"
+              /></label>
+              <p v-if="pollError" class="poll-error">{{ pollError }}</p>
+              <button
+                type="button"
+                @click="startPoll"
+                :disabled="!canStartPoll">
+                {{ canStartPoll ? "Start poll" : "Waiting for participants.." }}
+              </button>
+            </template>
+            <template v-else>
+              <p class="poll-question">{{ poll.question }}</p>
+              <div
+                class="poll-timer"
+                :style="{ '--poll-progress': pollProgress }">
+                <strong>{{ pollTimeSeconds }}</strong
+                ><span>SECONDS</span>
+              </div>
+              <ul>
+                <li v-for="option in poll.options" :key="option.id">
+                  {{ option.label }}: {{ poll.tally?.[option.id] ?? 0 }}
+                </li>
+              </ul>
+              <button
+                v-if="poll.status === 'complete'"
+                type="button"
+                @click="dismissPoll">
+                Dismiss results
+              </button>
+            </template>
+          </div>
+        </Transition>
+      </div>
+      <button
+        v-if="showPoll"
+        type="button"
+        class="slider-arrow slider-arrow-right"
+        aria-label="Next card"
+        @click="slideRoomPanels(1)">
+        ›
+      </button>
     </div>
   </section>
 </template>
@@ -767,11 +792,13 @@
     letter-spacing: normal;
     text-transform: none;
     resize: vertical;
+    field-sizing: content;
   }
   .poll-panel .question-input {
     min-height: 46px;
     overflow-y: hidden;
     resize: none;
+    field-sizing: content;
   }
   .poll-panel input::placeholder,
   .poll-panel textarea::placeholder {
@@ -879,8 +906,12 @@
       border-color: #f6b73c;
       color: #f6b73c;
     }
-    .slider-arrow-left { left: -4px; }
-    .slider-arrow-right { right: -4px; }
+    .slider-arrow-left {
+      left: -4px;
+    }
+    .slider-arrow-right {
+      right: -4px;
+    }
     .room-panels:not(.poll-hidden) {
       justify-content: flex-start;
       align-items: stretch;
