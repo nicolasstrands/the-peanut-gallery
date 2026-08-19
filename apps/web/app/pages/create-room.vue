@@ -291,6 +291,11 @@
     return `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(joinUrl.value)}`;
   });
 
+  const appRoomUrl = computed(() => {
+    if (!roomId.value) return "";
+    return `peanutgallery://room/${encodeURIComponent(roomId.value)}`;
+  });
+
   const connectedCountLabel = computed(() => {
     if (presenceState.value !== "connected") {
       return "Room presence unavailable";
@@ -321,20 +326,30 @@
         class="room-panels"
         :class="{ 'poll-hidden': !showPoll }">
         <div class="card" v-if="roomId && qrUrl">
-          <img
-            class="qrcode"
-            :src="qrUrl"
-            :alt="`QR code for room ${roomId}`" />
-          <p class="label">Room code</p>
-          <div class="code-row">
-            <p class="code">{{ roomId }}</p>
-            <div class="actions-stack">
-              <button
-                type="button"
-                class="icon-button"
-                @click="copyRoomCode"
-                :aria-label="copied ? 'Room code copied' : 'Copy room code'"
-                :title="copied ? 'Copied' : 'Copy room code'">
+          <div class="qr-block">
+            <div class="qr-frame">
+              <img
+                class="qrcode"
+                :src="qrUrl"
+                :alt="`QR code for room ${roomId}`" />
+            </div>
+            <span class="scan-hint">Scan to join instantly</span>
+          </div>
+          <div class="room-details">
+            <div class="status-alert" :class="presenceState">
+              <span class="dot" />
+              <span class="status-count">{{ connectedCountLabel }}</span>
+            </div>
+            <p class="label">Room code</p>
+            <div class="code-row">
+              <p class="code">{{ roomId }}</p>
+              <div class="actions-stack">
+                <button
+                  type="button"
+                  class="icon-button"
+                  @click="copyRoomCode"
+                  :aria-label="copied ? 'Room code copied' : 'Copy room code'"
+                  :title="copied ? 'Copied' : 'Copy room code'">
                 <svg v-if="!copied" viewBox="0 0 24 24" aria-hidden="true">
                   <rect
                     x="9"
@@ -362,13 +377,13 @@
                     stroke-linecap="round"
                     stroke-linejoin="round" />
                 </svg>
-              </button>
-              <button
-                type="button"
-                class="icon-button"
-                @click="regenerateRoom"
-                aria-label="Regenerate room code"
-                title="Regenerate room code">
+                </button>
+                <button
+                  type="button"
+                  class="icon-button"
+                  @click="regenerateRoom"
+                  aria-label="Regenerate room code"
+                  title="Regenerate room code">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path
                     d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32m0 0V19m0-3.68h3.68M4 12a8 8 0 0 1 13.66-5.66L20 8.68m0 0V5m0 3.68h-3.68"
@@ -378,17 +393,20 @@
                     stroke-linecap="round"
                     stroke-linejoin="round" />
                 </svg>
-              </button>
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="flex flex-col gap-3">
-            <div class="status-alert" :class="presenceState">
-              <span class="dot" />
-              <span class="status-count">{{ connectedCountLabel }}</span>
+            <div class="room-actions">
+              <NuxtLink :to="`/join/${roomId}`"
+                >Open deck on this device</NuxtLink
+              >
+              <a
+                v-if="appRoomUrl"
+                class="app-link"
+                :href="appRoomUrl"
+                >Open in Peanut Gallery app</a
+              >
             </div>
-            <NuxtLink :to="`/join/${roomId}`"
-              >Open deck on this device</NuxtLink
-            >
             <button type="button" class="toggle-poll" @click="togglePoll">
               {{ showPoll ? "Hide Poll" : "Toggle Poll" }}
             </button>
@@ -474,6 +492,7 @@
     background: #171310;
     color: #fff4df;
     font-family: Inter, system-ui, sans-serif;
+    overflow-x: hidden;
   }
   .room {
     min-height: 100vh;
@@ -494,6 +513,8 @@
   }
   section {
     @apply w-full;
+    box-sizing: border-box;
+    padding-top: 64px;
     text-align: center;
   }
   .eyebrow {
@@ -504,9 +525,10 @@
     font-weight: 800;
   }
   .qrcode {
-    width: min(280px, 100%);
+    width: 100%;
     height: auto;
-    @apply rounded-lg bg-white border-white border-20 mx-auto;
+    display: block;
+    border-radius: 12px;
   }
   h1 {
     @apply text-3xl md:text-5xl;
@@ -519,24 +541,67 @@
     margin: 0 auto;
   }
   .card {
+    box-sizing: border-box;
+    height: fit-content;
+    align-self: flex-start;
     margin: 0;
-    width: min(420px, 100%);
-    flex: 1 1 420px;
-    background: #241e1a;
-    border: 1px solid #3b3028;
-    border-radius: 22px;
-    padding: 20px;
+    width: min(560px, 100%);
+    flex: 1 1 560px;
+    display: grid;
+    grid-template-columns: minmax(190px, 0.92fr) minmax(220px, 1fr);
+    align-items: center;
+    gap: 28px;
+    background: linear-gradient(135deg, #2a231f 0%, #211b18 72%);
+    border: 1px solid #493a2f;
+    border-radius: 26px;
+    padding: 28px;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 22%);
+    position: relative;
+    overflow: hidden;
   }
-  img {
-    width: 100%;
-    max-width: 320px;
-    border-radius: 14px;
-    display: block;
-    margin: 0 auto;
+  .card::before {
+    content: "";
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    left: -120px;
+    top: -120px;
+    border-radius: 50%;
+    background: rgb(246 183 60 / 13%);
+    filter: blur(8px);
+    pointer-events: none;
+  }
+  .qr-block,
+  .room-details {
+    position: relative;
+    z-index: 1;
+  }
+  .qr-frame {
+    padding: 12px;
+    border-radius: 18px;
     background: #fff;
+    box-shadow: 0 12px 28px rgb(0 0 0 / 20%);
+  }
+  .scan-hint {
+    display: block;
+    margin-top: 12px;
+    color: #8e8273;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .room-details {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .room-details .status-alert {
+    margin: 0 0 28px;
   }
   .label {
-    margin: 18px 0 6px;
+    margin: 0 0 8px;
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.14em;
@@ -553,10 +618,10 @@
   }
   .code-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    margin: 10px auto;
+    gap: 12px;
+    margin: 0 0 24px;
   }
   .presence {
     margin-top: 12px;
@@ -616,7 +681,7 @@
   }
   .actions-stack {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     gap: 8px;
   }
@@ -663,13 +728,40 @@
     color: #f6b73c;
     text-decoration: none;
     font-weight: 700;
+    padding: 11px 15px;
+    border-radius: 10px;
+    background: #f6b73c;
+    color: #241e1a;
+    transition: transform 160ms ease, background 160ms ease;
+  }
+  .room-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    width: 100%;
+  }
+  .room-actions .app-link {
+    padding: 8px 12px;
+    border: 1px solid #594a3c;
+    background: transparent;
+    color: #b5a792;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .room-actions .app-link:hover {
+    border-color: #f6b73c;
+    background: rgb(246 183 60 / 8%);
+    color: #f6b73c;
   }
   a:hover {
-    text-decoration: underline;
+    background: #ffd16b;
+    text-decoration: none;
+    transform: translateY(-1px);
   }
   .toggle-poll {
     display: block;
-    margin: 0 auto;
+    margin: 14px 0 0;
     border: 0;
     background: transparent;
     color: #b5a792;
@@ -682,6 +774,7 @@
     color: #f6b73c;
   }
   .poll-panel {
+    box-sizing: border-box;
     width: min(560px, 100%);
     margin: 0;
     flex: 1 1 560px;
@@ -695,7 +788,7 @@
   }
   .room-panels {
     display: flex;
-    align-items: stretch;
+    align-items: flex-start;
     justify-content: center;
     gap: 24px;
     width: calc(100%);
@@ -709,10 +802,10 @@
     flex: 1 1 0;
   }
   .room-panels.poll-hidden .card {
-    flex: 0 1 520px;
+    flex: 0 1 560px;
   }
   .room-panels.poll-hidden .qrcode {
-    width: min(380px, 100%);
+    width: 100%;
   }
 
   .poll-panel h2 {
@@ -862,6 +955,19 @@
     display: none;
   }
   @media (max-width: 520px) {
+    section {
+      padding: 0 2px;
+      padding-top: 48px;
+    }
+    h1 {
+      font-size: clamp(30px, 10vw, 42px);
+      line-height: 1.05;
+    }
+    section > p {
+      padding: 0 12px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
     .room-panels {
       flex-direction: column;
       align-items: center;
@@ -872,11 +978,32 @@
       width: 100%;
       flex: none;
     }
+    .card {
+      width: 100%;
+      grid-template-columns: 1fr;
+      gap: 22px;
+      padding: 20px;
+    }
+    .room-details {
+      align-items: center;
+      text-align: center;
+    }
+    .room-details .status-alert {
+      margin-bottom: 20px;
+    }
+    .code-row {
+      flex-direction: column;
+      margin-bottom: 18px;
+    }
+    .qr-block {
+      width: min(280px, 100%);
+      margin: 0 auto;
+    }
     .room-panels.poll-hidden .card {
       flex-basis: auto;
     }
     .poll-panel {
-      width: calc(100% - 20px);
+      width: 100%;
       padding: 18px;
     }
   }
@@ -932,7 +1059,7 @@
       flex: none;
       scroll-snap-align: start;
     }
-    .room-panels .card {
+    .room-panels:not(.poll-hidden) .card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       grid-template-rows: 1fr auto auto auto auto 1fr;
@@ -940,39 +1067,39 @@
       align-items: center;
       padding: 18px;
     }
-    .room-panels .card .qrcode {
+    .room-panels:not(.poll-hidden) .card .qrcode {
       grid-column: 1;
       grid-row: 1 / -1;
       width: 100%;
       max-width: 300px;
     }
-    .room-panels .card .label {
+    .room-panels:not(.poll-hidden) .card .label {
       grid-column: 2;
       grid-row: 2;
       margin: 0 0 4px;
     }
-    .room-panels .card .code-row {
+    .room-panels:not(.poll-hidden) .card .code-row {
       grid-column: 2;
       grid-row: 3;
       flex-direction: column;
       gap: 8px;
       margin: 0;
     }
-    .room-panels .card .actions-stack {
+    .room-panels:not(.poll-hidden) .card .actions-stack {
       flex-direction: row;
       gap: 8px;
     }
-    .room-panels .card .status-alert {
+    .room-panels:not(.poll-hidden) .card .status-alert {
       grid-column: 2;
       grid-row: 4;
       margin: 8px auto 0;
     }
-    .room-panels .card > a {
+    .room-panels:not(.poll-hidden) .card .room-actions {
       grid-column: 2;
       grid-row: 5;
       margin-top: 12px;
     }
-    .room-panels .card .toggle-poll {
+    .room-panels:not(.poll-hidden) .card .toggle-poll {
       grid-column: 2;
       grid-row: 6;
       margin-top: 8px;

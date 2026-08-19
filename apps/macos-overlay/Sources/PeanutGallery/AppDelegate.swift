@@ -8,6 +8,8 @@ import AppKit
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let appURLScheme = "peanutgallery"
+
     private enum DefaultsKey {
         static let room = "peanutGallery.roomID"
         /// Whether the last deliberate action was a connect rather than a
@@ -68,6 +70,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildSettingsController()
         installStatusItem()
         restoreSession()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach(handleDeepLink)
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == Self.appURLScheme,
+              url.host?.lowercased() == "room",
+              let room = url.pathComponents.dropFirst().first,
+              room.count > 0,
+              room.count <= 32 else { return }
+
+        connect(to: room.uppercased())
+        NSApp.activate(ignoringOtherApps: true)
+        overlayController?.show()
+        leaderboardController?.show()
     }
 
     // MARK: - Setup
