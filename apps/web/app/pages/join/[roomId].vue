@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import FingerprintJS from "@fingerprintjs/fingerprintjs";
+  import emojiRegex from "emoji-regex";
 
   useSeoMeta({
     title: "Join Room",
@@ -12,8 +13,7 @@
   const customEmojiStorageKey = "peanut-gallery:custom-emoji";
   const sent = ref<string[]>([]);
   const customEmoji = ref("");
-  const emojiPattern =
-    /^\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)*$/u;
+  const emojiPattern = emojiRegex();
   const connectionState = ref<
     "connecting" | "connected" | "disconnected" | "error"
   >("connecting");
@@ -294,7 +294,9 @@
   }
 
   function isSingleEmoji(value: string) {
-    return emojiPattern.test(value);
+    emojiPattern.lastIndex = 0;
+    const match = value.match(emojiPattern);
+    return match?.[0] === value;
   }
 
   const connectedCountLabel = computed(() => {
