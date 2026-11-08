@@ -1,103 +1,107 @@
 <script setup lang="ts">
+  const requestURL = useRequestURL();
+  const showStrandsLogo = computed(
+    () => requestURL.hostname === "peanutgallery.arcodelabs.com",
+  );
   useSeoMeta({
     title: "The Peanut Gallery",
     description:
       "Create a live reaction room in seconds and let your audience send emoji to your screen in real time.",
   });
-  const isHomeHeroMounted = useState<boolean>("home-hero-mounted", () => false);
-  const requestURL = useRequestURL();
-  const showStrandsLogo = computed(
-    () => requestURL.hostname === "peanutgallery.arcodelabs.com",
-  );
-
-  onMounted(() => {
-    isHomeHeroMounted.value = true;
-  });
-
-  onBeforeUnmount(() => {
-    isHomeHeroMounted.value = false;
-  });
 </script>
 
 <template>
-  <img
-    v-if="showStrandsLogo"
-    class="h-auto w-30"
-    src="/strands.svg"
-    alt="strands-logo" />
-  <h1>
-    Welcome to<br />
-    <span
-      class="title-letters gallery-title-shared"
-      aria-label="The Peanut Gallery"
-      ><span class="letter">T</span><span class="letter">h</span
-      ><span class="letter">e</span> <span class="letter">P</span
-      ><span class="letter">e</span><span class="letter">a</span
-      ><span class="letter">n</span><span class="letter">u</span
-      ><span class="letter">t</span> <span class="letter">G</span
-      ><span class="letter">a</span><span class="letter">l</span
-      ><span class="letter">l</span><span class="letter">e</span
-      ><span class="letter">r</span><span class="letter">y</span></span
+  <section class="home">
+    <img
+      v-if="showStrandsLogo"
+      class="strands-logo"
+      src="/strands.svg"
+      alt="Strands"
+      width="100"
+      height="32"
+    />
+    <p class="eyebrow">Give your audience a voice</p>
+    <h1><span class="welcome">Welcome to</span><Wordmark hero /></h1>
+    <p class="lede">
+      Open a room. Share the link. Let your audience throw a little energy
+      across your screen.
+    </p>
+    <NuxtLink class="button create-room" to="/create-room"
+      >Create a room <span aria-hidden="true">↗</span></NuxtLink
     >
-  </h1>
-  <p class="lede">
-    Open a room, share the link, and let your audience<wbr /> throw reactions
-    across your screen.
-  </p>
-  <NuxtLink class="create-room" to="/create-room" view-transition>
-    Create a room
-  </NuxtLink>
+    <p class="hint">No audience sign-up. Just scan and react.</p>
+    <div class="preview" aria-hidden="true">
+      <span>🔥</span><span>👏</span><span>😂</span><span>❤️</span>
+    </div>
+    <p class="how">One shared link. Every reaction, live on your Mac.</p>
+  </section>
 </template>
 
 <style scoped>
-  @reference "../assets/css/main.css";
-  :global(body) {
-    @apply m-0 bg-[#17130f] text-[#fff4df] font-sans;
+  .strands-logo {
+    display: block;
+    width: 100px;
+    height: auto;
+    margin: 0 auto 24px;
   }
-  .shell {
-    @apply mx-auto max-w-190 flex flex-col items-center justify-center;
-  }
-  .eyebrow {
-    @apply text-xs font-extrabold uppercase tracking-[0.18em] text-peanut-gallery;
+  .home {
+    text-align: center;
+    max-width: 850px;
+    margin-inline: auto;
   }
   h1 {
-    @apply my-6 font-display text-3xl md:text-7xl leading-[0.95] tracking-[-0.06em] text-center;
+    display: grid;
+    gap: 12px;
+    margin: 24px 0;
   }
-  h1 span {
-    @apply text-peanut-gallery;
-  }
-  h1 .title-letters {
-    @apply inline-block;
-    paint-order: stroke fill;
-    letter-spacing: -0.12ch;
-    -webkit-text-stroke: 5px black;
-    text-shadow: 4px 4px black;
-  }
-  h1 .letter {
-    @apply inline-block;
-    transform-origin: 50% 70%;
-  }
-  h1 .letter:nth-child(odd) {
-    transform: rotate(-2deg);
-  }
-  h1 .letter:nth-child(even) {
-    transform: rotate(2deg);
+  .welcome {
+    font-family: "Balsamiq Sans", sans-serif;
+    font-size: clamp(24px, 4vw, 32px);
+    color: var(--text);
   }
   .lede {
-    @apply max-w-120 text-[19px] leading-normal text-center;
+    max-width: 470px;
+    margin-inline: auto;
+    color: var(--muted);
+    font-size: 18px;
+    text-wrap: pretty;
   }
   .create-room {
-    @apply transition-all duration-200 ease-in-out;
-    @apply rounded-2xl px-6 py-4 text-base;
-    @apply mt-9.5;
-    @apply cursor-pointer bg-peanut-gallery font-extrabold text-black border-b-amber-700 border-b-8;
-    @apply active:border-b-0 active:translate-y-1.5;
-    @apply inline-block no-underline;
+    margin-top: 28px;
+    padding-inline: 28px;
+    box-shadow: 0 4px 0 #92601c;
   }
   .hint {
-    @apply mt-4.5 text-[#8e8273];
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 18px;
   }
-  a {
-    @apply text-peanut-gallery;
+  .preview {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 48px;
+  }
+  .preview span {
+    display: grid;
+    place-items: center;
+    width: 58px;
+    height: 58px;
+    font-size: 30px;
+    border-radius: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 0 #0d0a08;
+  }
+  .preview span:nth-child(odd) {
+    transform: rotate(-5deg);
+  }
+  .preview span:nth-child(even) {
+    transform: rotate(5deg);
+  }
+  .how {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 18px;
   }
 </style>

@@ -65,7 +65,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const router = useRouter();
   router.beforeEach(() => {
-    play("pageloading");
+    play("page");
   });
 
   router.afterEach(() => {
@@ -86,7 +86,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   });
   window.addEventListener("keydown", keydown, { capture: true });
 
-  nuxtApp.hook("app:beforeUnmount", () => {
+  nuxtApp.vueApp.onUnmount(() => {
     window.removeEventListener("pointerdown", pointerDown, { capture: true });
     window.removeEventListener("pointerup", pointerUp, { capture: true });
     window.removeEventListener("keydown", keydown, { capture: true });

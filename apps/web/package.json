@@ -18,7 +18,10 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^22.20.5",
     "tailwindcss": "^4.1.11",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.14",
     "wrangler": "^4.113.0"
   }
 }

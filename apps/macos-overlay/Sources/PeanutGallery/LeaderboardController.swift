@@ -34,7 +34,7 @@ final class LeaderboardPanel: NSPanel {
     let leaderboardView: LeaderboardView
 
     init(screen: NSScreen) {
-            let size = NSSize(width: 280, height: 300)
+        let size = NSSize(width: 320, height: 380)
         let frame = NSRect(
             x: screen.visibleFrame.maxX - size.width - 24,
             y: screen.visibleFrame.maxY - size.height - 24,
@@ -52,61 +52,62 @@ final class LeaderboardPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         level = .floating
-            ignoresMouseEvents = false
-            isMovableByWindowBackground = false
-            acceptsMouseMovedEvents = true
+        ignoresMouseEvents = false
+        isMovableByWindowBackground = false
+        acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         contentView = leaderboardView
     }
 }
 
-    final class LeaderboardView: NSView {
-        private var counts: [String: Int] = [:]
-        private var poll: PollState?
-        private var dragStart: NSPoint?
+final class LeaderboardView: NSView {
+    private var counts: [String: Int] = [:]
+    private var poll: PollState?
+    private var dragStart: NSPoint?
 
-        func update(counts: [String: Int]) {
-            self.counts = counts
-            self.poll = nil
-            needsDisplay = true
-        }
+    func update(counts: [String: Int]) {
+        self.counts = counts
+        self.poll = nil
+        needsDisplay = true
+    }
 
-        func update(poll: PollState?) {
-            self.poll = poll
-            needsDisplay = true
-        }
+    func update(poll: PollState?) {
+        self.poll = poll
+        needsDisplay = true
+    }
 
-        override func resetCursorRects() {
-            addCursorRect(bounds, cursor: .openHand)
-        }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
 
-        override func mouseDown(with event: NSEvent) {
-            dragStart = event.locationInWindow
-            NSCursor.closedHand.push()
-        }
+    override func mouseDown(with event: NSEvent) {
+        dragStart = event.locationInWindow
+        NSCursor.closedHand.push()
+    }
 
-        override func mouseDragged(with event: NSEvent) {
-            guard let dragStart, let window else { return }
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStart, let window else { return }
 
-            let current = event.locationInWindow
-            let origin = window.frame.origin
-            window.setFrameOrigin(NSPoint(
+        let current = event.locationInWindow
+        let origin = window.frame.origin
+        window.setFrameOrigin(
+            NSPoint(
                 x: origin.x + current.x - dragStart.x,
                 y: origin.y + current.y - dragStart.y
             ))
-        }
+    }
 
-        override func mouseUp(with event: NSEvent) {
-            dragStart = nil
-            NSCursor.pop()
-        }
+    override func mouseUp(with event: NSEvent) {
+        dragStart = nil
+        NSCursor.pop()
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
         let bounds = self.bounds.insetBy(dx: 1, dy: 1)
         let panelPath = NSBezierPath(roundedRect: bounds, xRadius: 18, yRadius: 18)
-        NSColor(calibratedWhite: 0.08, alpha: 0.94).setFill()
+        NSColor(calibratedRed: 0.14, green: 0.12, blue: 0.10, alpha: 0.96).setFill()
         panelPath.fill()
         NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 0.65).setStroke()
         panelPath.lineWidth = 1
@@ -114,9 +115,11 @@ final class LeaderboardPanel: NSPanel {
 
         let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.boldSystemFont(ofSize: 16),
-            .foregroundColor: NSColor(calibratedWhite: 0.98, alpha: 1)
+            .foregroundColor: NSColor(calibratedWhite: 0.98, alpha: 1),
         ]
-        NSString(string: poll == nil ? "Leaderboard" : "Poll").draw(
+        let title =
+            poll.map { $0.status == "active" ? "Audience poll" : "Poll results" } ?? "Leaderboard"
+        NSString(string: title).draw(
             at: NSPoint(x: 18, y: bounds.maxY - 34),
             withAttributes: titleAttributes
         )
@@ -134,7 +137,7 @@ final class LeaderboardPanel: NSPanel {
         if rows.isEmpty {
             let emptyAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor(calibratedWhite: 0.65, alpha: 1)
+                .foregroundColor: NSColor(calibratedWhite: 0.65, alpha: 1),
             ]
             NSString(string: "No reactions yet").draw(
                 at: NSPoint(x: 18, y: bounds.midY - 8),
@@ -147,15 +150,20 @@ final class LeaderboardPanel: NSPanel {
             let y = bounds.maxY - 70 - CGFloat(index * 32)
             let rankAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 12),
-                .foregroundColor: NSColor(calibratedWhite: 0.55, alpha: 1)
+                .foregroundColor: NSColor(calibratedWhite: 0.55, alpha: 1),
             ]
             let emojiAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 22),
-                .foregroundColor: NSColor.white
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: {
+                    let style = NSMutableParagraphStyle()
+                    style.lineBreakMode = .byTruncatingTail
+                    return style
+                }(),
             ]
             let countAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 14),
-                .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 1)
+                .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 1),
             ]
 
             NSString(string: "\(index + 1)").draw(
@@ -177,38 +185,64 @@ final class LeaderboardPanel: NSPanel {
     }
 
     private func drawPoll(_ poll: PollState, in bounds: NSRect) {
-            let questionAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 13),
-                .foregroundColor: NSColor(calibratedWhite: 0.94, alpha: 1)
-            ]
-            NSString(string: poll.question).draw(
-                in: NSRect(x: 18, y: bounds.maxY - 78, width: bounds.width - 36, height: 38),
-                withAttributes: questionAttributes
-            )
+        let questionAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: 13),
+            .foregroundColor: NSColor(calibratedWhite: 0.94, alpha: 1),
+        ]
+        let questionStyle = NSMutableParagraphStyle()
+        questionStyle.lineBreakMode = .byWordWrapping
+        var wrappedQuestionAttributes = questionAttributes
+        wrappedQuestionAttributes[.paragraphStyle] = questionStyle
+        NSString(string: poll.question).draw(
+            with: NSRect(x: 18, y: bounds.maxY - 114, width: bounds.width - 36, height: 68),
+            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+            attributes: wrappedQuestionAttributes
+        )
 
-            let tally = poll.tally ?? [:]
-            let rankedOptions = poll.options.sorted {
+        let tally = poll.tally ?? [:]
+        // Keep answers still while votes arrive; rank once voting closes.
+        let options =
+            poll.status == "active"
+            ? poll.options
+            : poll.options.sorted {
                 let leftCount = tally[$0.id] ?? 0
                 let rightCount = tally[$1.id] ?? 0
                 return leftCount == rightCount ? $0.label < $1.label : leftCount > rightCount
-            }.prefix(5)
-            let optionAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.white
-            ]
-            let countAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.boldSystemFont(ofSize: 13),
-                .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 1)
-            ]
+            }
+        let rankedOptions = options.prefix(5)
+        let optionAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.white,
+            .paragraphStyle: {
+                let style = NSMutableParagraphStyle()
+                style.lineBreakMode = .byTruncatingTail
+                return style
+            }(),
+        ]
+        let countAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: 13),
+            .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.72, blue: 0.24, alpha: 1),
+        ]
         for (index, option) in rankedOptions.enumerated() {
-            let y = bounds.maxY - 126 - CGFloat(index * 30)
+            let y = bounds.maxY - 156 - CGFloat(index * 34)
             NSString(string: "\(index + 1). \(option.label)").draw(
                 in: NSRect(x: 18, y: y, width: bounds.width - 68, height: 20),
                 withAttributes: optionAttributes
             )
             let count = NSString(string: "\(tally[option.id] ?? 0)")
             let size = count.size(withAttributes: countAttributes)
-            count.draw(at: NSPoint(x: bounds.maxX - 18 - size.width, y: y), withAttributes: countAttributes)
+            count.draw(
+                at: NSPoint(x: bounds.maxX - 18 - size.width, y: y), withAttributes: countAttributes
+            )
+        }
+        if options.count > 5 {
+            let noteAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor(calibratedWhite: 0.7, alpha: 1),
+            ]
+            NSString(string: "Showing 5 of \(options.count) answers · full results on web").draw(
+                at: NSPoint(x: 18, y: 22), withAttributes: noteAttributes
+            )
         }
     }
 }
