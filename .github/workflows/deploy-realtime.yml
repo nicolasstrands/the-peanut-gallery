@@ -53,6 +53,9 @@ jobs:
       - name: Type-check realtime worker
         run: pnpm --filter realtime lint
 
+      - name: Run realtime security regression tests
+        run: pnpm --filter realtime test
+
   deploy:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: validate

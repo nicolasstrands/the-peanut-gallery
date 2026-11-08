@@ -176,3 +176,28 @@ Because the macOS app is currently unsigned and un-notarized, Gatekeeper may blo
 ```bash
 xattr -dr com.apple.quarantine PeanutGallery.app
 ```
+
+
+## Room security and limits
+
+The realtime service creates rooms with `POST /rooms`. It returns a six-character public room code, a private creator credential, a separate read-only display credential, and the room expiry. The host page retains creator access in its tab's session storage; refreshing the tab resumes the same room. Audience invitations and QR codes contain only the public room code. Use **Create a new room** to start a separate session.
+
+Joining, reactions, and voting are automatic: there is no approval or sign-up step. The server issues a signed browser-session credential, and reconnects retain that identity. Changing a vote replaces that session's earlier choice; caller-supplied fingerprints cannot create extra voters on the same connection. This intentionally provides one vote per browser session, not verified one-person-one-vote: someone deliberately using fresh sessions or different browsers can still vote multiple times. Rate limits, socket limits, and a per-poll voter cap constrain abuse. This tradeoff preserves the casual audience experience.
+
+**Open Peanut Gallery app** on the host page passes the read-only display credential to the Mac app. The app saves it in Keychain only after the server accepts it, scoped to the endpoint and room. Room-code-only native connections receive public reactions/questions without private poll tallies. The display credential cannot start or dismiss polls.
+
+Rooms expire after 24 hours and their durable state is removed. Limits are 64 concurrent sockets, 256 distinct voting sessions per poll, and 64 distinct reaction keys (including the default reactions). Joining and reconnecting without voting allocate no durable voter entries. Existing voters can still change their choice when the poll cap is reached. Custom single emoji remain supported; arbitrary text and multiple emoji are rejected. Leaderboards sent to clients contain only the top five entries. Per-second limits apply per connection and per room to messages, reactions and votes; excess requests return a protocol error rather than growing state. See `apps/realtime/src/index.ts` for the limits.
+
+Deploy the updated web and realtime service together, and publish the updated Mac app for credential-bearing display links. Rooms created by versions without creator credentials must be recreated after this update: the server never grants ownership of an old room to its first connecting client. The legacy `deploy/` entry point now re-exports the same secured Worker instead of maintaining a second raw broadcast implementation.
+
+Run the security regressions with:
+
+```bash
+pnpm --filter realtime test
+pnpm --filter realtime lint
+pnpm --filter web lint
+pnpm build:web
+pnpm build:macos
+```
+
+The realtime suite uses an isolated local Miniflare instance, including actual Durable Object eviction/hibernation, and never contacts production. For the native handshake smoke check, start `pnpm dev:realtime` on port 8787 in one terminal, then run `pnpm test:macos:socket`. It tests valid/invalid display credentials and recovery against loopback without writing to the user's Keychain.

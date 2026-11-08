@@ -7,13 +7,14 @@ enum ReactionConnectionState {
     case reconnecting
     /// No realtime server has been configured yet, so there is nothing to dial.
     case unconfigured
+    case accessDenied
 
     /// A socket is open or on its way up. Drives whether the UI offers to
     /// connect or to disconnect.
     var isLive: Bool {
         switch self {
         case .connected, .connecting, .reconnecting: return true
-        case .disconnected, .unconfigured: return false
+        case .disconnected, .unconfigured, .accessDenied: return false
         }
     }
 }
@@ -39,6 +40,11 @@ struct PollState: Decodable {
     let tally: [String: Int]?
 }
 
+private struct RoomStatusMessage: Decodable {
+    let type: String
+    let code: String?
+}
+
 struct PollStateMessage: Decodable {
     let type: String
     let poll: PollState?
@@ -48,6 +54,7 @@ final class ReactionSocket {
     private var task: URLSessionWebSocketTask?
     private var pingTimer: Timer?
     private var reconnectWorkItem: DispatchWorkItem?
+    private var displayToken: String?
     private var room: String?
     private var reconnectAttempt = 0
     private var stopping = false
@@ -57,20 +64,26 @@ final class ReactionSocket {
     private let onPollState: (PollState?) -> Void
     private let onStateChange: (ReactionConnectionState) -> Void
     private let session = URLSession(configuration: .default)
+    private let onDisplayAuthorized: (String, String, String) -> Void
 
     init(
         onReaction: @escaping (String) -> Void,
         onLeaderboard: @escaping ([String: Int]) -> Void,
         onPollState: @escaping (PollState?) -> Void,
-        onStateChange: @escaping (ReactionConnectionState) -> Void
+        onStateChange: @escaping (ReactionConnectionState) -> Void,
+        onDisplayAuthorized: @escaping (String, String, String) -> Void = { token, room, server in
+            DisplayCredentialStore.save(token, room: room, server: server)
+        }
     ) {
         self.onReaction = onReaction
         self.onLeaderboard = onLeaderboard
         self.onPollState = onPollState
         self.onStateChange = onStateChange
+        self.onDisplayAuthorized = onDisplayAuthorized
     }
 
-    func connect(room: String) {
+    func connect(room: String, displayToken: String? = nil) {
+        self.displayToken = displayToken
         self.room = room
         stopping = false
         reconnectAttempt = 0
@@ -111,17 +124,19 @@ final class ReactionSocket {
         let connection = session.webSocketTask(with: url)
         task = connection
         connection.resume()
-        sendJoinMessage(room: room, on: connection)
+        let credential = displayToken
+        sendJoinMessage(room: room, displayToken: credential, on: connection)
         startPingTimer(for: connection)
-        listen(on: connection)
+        listen(on: connection, room: room, displayToken: credential, endpoint: base)
     }
 
-    private func sendJoinMessage(room: String, on connection: URLSessionWebSocketTask) {
-        let payload: [String: String] = [
+    private func sendJoinMessage(room: String, displayToken: String?, on connection: URLSessionWebSocketTask) {
+        var payload: [String: String] = [
             "type": "join-room",
             "roomId": room,
             "clientType": "macos"
         ]
+        if let displayToken { payload["displayToken"] = displayToken }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let text = String(data: data, encoding: .utf8) else { return }
         connection.send(.string(text)) { [weak self, weak connection] error in
@@ -130,13 +145,37 @@ final class ReactionSocket {
         }
     }
 
-    private func listen(on connection: URLSessionWebSocketTask) {
+    private func listen(on connection: URLSessionWebSocketTask, room: String, displayToken: String?, endpoint: String) {
         connection.receive { [weak self, weak connection] result in
             guard let self, let connection else { return }
             guard self.task === connection else { return }
 
             switch result {
             case .success(.string(let text)):
+                if let data = text.data(using: .utf8),
+                   let status = try? JSONDecoder().decode(RoomStatusMessage.self, from: data) {
+                    if status.type == "room-ready" {
+                        // Bind acceptance to the immutable connection inputs,
+                        // and recheck identity on the queue that mutates sessions.
+                        DispatchQueue.main.async { [weak self, weak connection] in
+                            guard let self, let connection, self.task === connection else { return }
+                            if let displayToken { self.onDisplayAuthorized(displayToken, room, endpoint) }
+                            self.reconnectAttempt = 0
+                            self.onStateChange(.connected)
+                        }
+                    } else if status.type == "protocol-error",
+                              status.code == "unauthorized" || status.code == "room_expired" || status.code == "invalid_room" {
+                        DispatchQueue.main.async { [weak self, weak connection] in
+                            guard let self, let connection, self.task === connection else { return }
+                            self.stopping = true
+                            self.stopPingTimer()
+                            self.task = nil
+                            connection.cancel(with: .policyViolation, reason: nil)
+                            self.onStateChange(.accessDenied)
+                        }
+                        return
+                    }
+                }
                 if let data = text.data(using: .utf8),
                    let message = try? JSONDecoder().decode(ReactionMessage.self, from: data),
                    message.type == "reaction", let emoji = message.emoji {
@@ -152,9 +191,9 @@ final class ReactionSocket {
                    message.type == "poll-state" {
                     self.onPollState(message.poll)
                 }
-                self.listen(on: connection)
+                self.listen(on: connection, room: room, displayToken: displayToken, endpoint: endpoint)
             case .success(.data):
-                self.listen(on: connection)
+                self.listen(on: connection, room: room, displayToken: displayToken, endpoint: endpoint)
             case .failure:
                 self.connectionDidEnd(connection)
             @unknown default:
@@ -190,9 +229,6 @@ final class ReactionSocket {
             guard let self, let connection, self.task === connection else { return }
             if error != nil {
                 self.connectionDidEnd(connection)
-            } else {
-                self.reconnectAttempt = 0
-                self.notify(.connected)
             }
         }
 

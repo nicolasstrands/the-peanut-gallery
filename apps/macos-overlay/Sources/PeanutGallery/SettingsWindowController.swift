@@ -236,6 +236,7 @@ final class SettingsWindowController: NSWindowController {
         case .reconnecting: connectionLabel.stringValue = "Reconnecting…"
         case .disconnected: connectionLabel.stringValue = "Disconnected"
         case .unconfigured: connectionLabel.stringValue = "No server configured"
+        case .accessDenied: connectionLabel.stringValue = "Access denied — open a fresh host link"
         }
         refreshPrimaryButton()
     }

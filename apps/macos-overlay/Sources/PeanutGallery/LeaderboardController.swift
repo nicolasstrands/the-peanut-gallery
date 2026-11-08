@@ -199,7 +199,17 @@ final class LeaderboardView: NSView {
             attributes: wrappedQuestionAttributes
         )
 
-        let tally = poll.tally ?? [:]
+        guard let tally = poll.tally else {
+            let note: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+            NSString(string: "Open this room from the host’s display link to see voting results.").draw(
+                in: NSRect(x: 18, y: bounds.maxY - 200, width: bounds.width - 36, height: 64),
+                withAttributes: note
+            )
+            return
+        }
         // Keep answers still while votes arrive; rank once voting closes.
         let options =
             poll.status == "active"

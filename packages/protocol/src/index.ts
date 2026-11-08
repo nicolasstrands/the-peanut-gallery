@@ -28,6 +28,9 @@ export type JoinRoomMessage = {
   type: "join-room";
   roomId: string;
   clientType: ClientType;
+  hostToken?: string;
+  displayToken?: string;
+  participantToken?: string;
 };
 
 export type PresenceSyncMessage = {
@@ -46,7 +49,8 @@ export type PollVoteMessage = {
   type: "poll-vote";
   pollId: string;
   optionId: string;
-  fingerprint: string;
+  /** Deprecated identity hint; the server ignores it for authorization. */
+  fingerprint?: string;
 };
 
 export type PollDismissMessage = {
@@ -81,4 +85,27 @@ export type ServerMessage =
   | ReactionMessage
   | LeaderboardMessage
   | PresenceMessage
-  | PollStateMessage;
+  | PollStateMessage
+  | ParticipantSessionMessage
+  | ProtocolErrorMessage
+  | { type: "room-ready" }
+  | { type: "vote-accepted"; pollId: string; optionId: string };
+
+export type RoomCreatedMessage = {
+  roomId: string;
+  hostToken: string;
+  displayToken: string;
+  expiresAt: number;
+};
+
+export type ParticipantSessionMessage = {
+  type: "participant-session";
+  participantId: string;
+  participantToken?: string;
+};
+
+export type ProtocolErrorMessage = {
+  type: "protocol-error";
+  code: string;
+  message: string;
+};

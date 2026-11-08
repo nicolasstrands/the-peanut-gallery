@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import FingerprintJS from "@fingerprintjs/fingerprintjs";
+  import { participantNickname } from "~/utils/participantNickname";
   import emojiRegex from "emoji-regex";
 
   useSeoMeta({
@@ -41,49 +41,18 @@
     status: "active" | "complete";
   } | null>(null);
   const selectedOptionId = ref<string | null>(null);
-  const deviceFingerprint = ref("");
+  const participantId = ref("");
+  const participantToken = ref("");
+  const protocolError = ref("");
+  let authenticationFailed = false;
   const pollNow = ref(Date.now());
   const nickname = ref("");
-  const adjectives = [
-    "Brave",
-    "Clever",
-    "Cosmic",
-    "Dazzling",
-    "Fierce",
-    "Golden",
-    "Jolly",
-    "Lucky",
-    "Mighty",
-    "Nimble",
-    "Quiet",
-    "Swift",
-  ];
-  const animalsAndColors = [
-    "Badger",
-    "Bear",
-    "Blue",
-    "Cardinal",
-    "Coral",
-    "Crimson",
-    "Dolphin",
-    "Fox",
-    "Green",
-    "Jaguar",
-    "Koala",
-    "Lynx",
-    "Otter",
-    "Panther",
-    "Purple",
-    "Raven",
-    "Red",
-    "Tiger",
-    "Wolf",
-    "Yellow",
-  ];
-
   const roomId = computed(() => String(route.params.roomId ?? ""));
   const config = useRuntimeConfig();
   const realtimeUrl = config.public.realtimeUrl || "ws://localhost:8787";
+  const participantStorageKey = computed(
+    () => `peanut-gallery:participant:${realtimeUrl}:${roomId.value}`,
+  );
   const presenceRefreshIntervalMs = 15000;
   const reconnectDelays = [1000, 2000, 5000, 10000, 15000];
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -99,12 +68,10 @@
       localStorage.removeItem(customEmojiStorageKey);
     }
 
-    const deviceKey = "peanut-gallery:device-id";
-    const localDeviceId =
-      localStorage.getItem(deviceKey) ?? crypto.randomUUID();
-    localStorage.setItem(deviceKey, localDeviceId);
-    deviceFingerprint.value = localDeviceId;
-    nickname.value = nicknameFromFingerprint(localDeviceId);
+    try {
+      participantToken.value =
+        localStorage.getItem(participantStorageKey.value) ?? "";
+    } catch {}
 
     if (!roomId.value) {
       connectionState.value = "error";
@@ -114,29 +81,8 @@
     pollTimer = setInterval(() => {
       pollNow.value = Date.now();
     }, 250);
-    void loadFingerprint().finally(connect);
+    connect();
   });
-
-  async function loadFingerprint() {
-    try {
-      const agent = await FingerprintJS.load();
-      deviceFingerprint.value = (await agent.get()).visitorId;
-      nickname.value = nicknameFromFingerprint(deviceFingerprint.value);
-    } catch {
-      // A local fallback preserves voting if fingerprint collection fails.
-      // Keep using the local identity initialized before connecting.
-    }
-  }
-
-  function nicknameFromFingerprint(fingerprint: string) {
-    let hash = 2166136261;
-    for (const character of fingerprint) {
-      hash ^= character.charCodeAt(0);
-      hash = Math.imul(hash, 16777619);
-    }
-    const unsignedHash = hash >>> 0;
-    return `${adjectives[unsignedHash % adjectives.length]}${animalsAndColors[Math.floor(unsignedHash / adjectives.length) % animalsAndColors.length]}`;
-  }
 
   onBeforeUnmount(() => {
     isUnmounted = true;
@@ -163,8 +109,6 @@
 
     connection.addEventListener("open", () => {
       if (socket.value !== connection) return;
-      reconnectAttempt = 0;
-      connectionState.value = "connected";
       sendJoinRoom(connection);
       startPresenceRefreshTimer(connection);
     });
@@ -177,7 +121,65 @@
           emoji?: string;
           connected?: number;
           poll?: typeof poll.value;
+          pollId?: string;
+          optionId?: string;
+          participantId?: string;
+          participantToken?: string;
+          code?: string;
+          message?: string;
         };
+        if (
+          message.type === "participant-session" &&
+          typeof message.participantId === "string"
+        ) {
+          participantId.value = message.participantId;
+          nickname.value = participantNickname(message.participantId);
+          if (message.participantToken) {
+            participantToken.value = message.participantToken;
+            try {
+              localStorage.setItem(
+                participantStorageKey.value,
+                message.participantToken,
+              );
+            } catch {}
+          }
+        }
+        if (
+          message.type === "vote-accepted" &&
+          message.pollId === poll.value?.id &&
+          typeof message.optionId === "string"
+        ) {
+          selectedOptionId.value = message.optionId;
+          voteMessage.value =
+            "Vote recorded. You can change your choice while voting is open.";
+        }
+        if (message.type === "room-ready") {
+          reconnectAttempt = 0;
+          connectionState.value = "connected";
+        }
+        if (message.type === "protocol-error") {
+          protocolError.value =
+            message.message ?? "The room could not process this action.";
+          if (
+            [
+              "invalid_session",
+              "room_full",
+              "room_expired",
+              "invalid_room",
+              "unauthorized",
+            ].includes(message.code ?? "")
+          ) {
+            authenticationFailed = true;
+            connectionState.value = "error";
+            stopPresenceRefreshTimer();
+            if (reconnectTimer) {
+              clearTimeout(reconnectTimer);
+              reconnectTimer = null;
+            }
+            socket.value = null;
+            connection.close();
+          }
+        }
         if (
           message.type === "presence" &&
           typeof message.connected === "number"
@@ -230,6 +232,7 @@
         type: "join-room",
         roomId: roomId.value,
         clientType: "web",
+        participantToken: participantToken.value || undefined,
       }),
     );
   }
@@ -258,7 +261,7 @@
   }
 
   function scheduleReconnect() {
-    if (isUnmounted || reconnectTimer) return;
+    if (isUnmounted || authenticationFailed || reconnectTimer) return;
 
     const delay =
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
@@ -273,6 +276,7 @@
   function react(emoji: string) {
     if (poll.value || socket.value?.readyState !== WebSocket.OPEN) return;
 
+    protocolError.value = "";
     socket.value.send(
       JSON.stringify({
         type: "reaction",
@@ -287,22 +291,19 @@
     if (
       !poll.value ||
       poll.value.status !== "active" ||
-      !deviceFingerprint.value ||
+      !participantId.value ||
       socket.value?.readyState !== WebSocket.OPEN ||
       pollTimeSeconds.value <= 0
     )
       return;
+    protocolError.value = "";
     socket.value.send(
       JSON.stringify({
         type: "poll-vote",
         pollId: poll.value.id,
         optionId,
-        fingerprint: deviceFingerprint.value,
       }),
     );
-    selectedOptionId.value = optionId;
-    voteMessage.value =
-      "Vote sent. You can change your choice while voting is open.";
   }
 
   async function openEmojiEditor() {
@@ -548,6 +549,9 @@
         </div>
       </Transition>
     </div>
+    <p v-if="protocolError" class="error connection-note" role="alert">
+      {{ protocolError }}
+    </p>
     <p v-if="connectionState !== 'connected'" class="connection-note">
       Reactions and voting will be available when you’re connected.
     </p>

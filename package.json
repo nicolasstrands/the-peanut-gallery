@@ -14,7 +14,8 @@
     "package:macos": "bash scripts/package-macos.sh",
     "clean:macos": "swift package --package-path apps/macos-overlay clean",
     "lint": "turbo lint",
-    "test": "turbo test"
+    "test": "turbo test",
+    "test:macos:socket": "bash scripts/test-macos-socket.sh"
   },
   "devDependencies": {
     "turbo": "^2.5.4"

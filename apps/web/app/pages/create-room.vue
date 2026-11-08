@@ -6,6 +6,12 @@
   });
 
   const roomId = ref("");
+  const hostToken = ref("");
+  const displayToken = ref("");
+  const creatingRoom = ref(false);
+  const creationError = ref("");
+  const hostError = ref("");
+  let authenticationFailed = false;
   const joinUrl = ref("");
   const copied = ref<"code" | "link" | null>(null);
   const copyError = ref("");
@@ -51,26 +57,72 @@
   let isUnmounted = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-  function generateRoomId(length = 6): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const bytes = new Uint8Array(length);
-    crypto.getRandomValues(bytes);
+  const hostStorageKey = `peanut-gallery:host-room:${realtimeUrl}`;
+  type HostRoom = {
+    roomId: string;
+    hostToken: string;
+    displayToken: string;
+    expiresAt: number;
+  };
 
-    return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
-  }
-
-  function regenerateRoom() {
+  function adoptRoom(room: HostRoom) {
     closePresenceSocket();
+    authenticationFailed = false;
+    hostError.value = "";
     poll.value = null;
     qrFailed.value = false;
     qrLoaded.value = false;
     copyError.value = "";
-    roomId.value = generateRoomId(6);
-    joinUrl.value = `${window.location.origin}/join/${roomId.value}`;
+    roomId.value = room.roomId;
+    hostToken.value = room.hostToken;
+    displayToken.value = room.displayToken;
+    joinUrl.value = `${window.location.origin}/join/${room.roomId}`;
     copied.value = null;
     connectedCount.value = null;
     reconnectAttempt = 0;
     connectPresence();
+  }
+
+  function validRoom(value: unknown): value is HostRoom {
+    if (!value || typeof value !== "object") return false;
+    const room = value as HostRoom;
+    return (
+      /^[A-Z0-9]{6}$/.test(room.roomId) &&
+      /^[a-f0-9]{64}$/.test(room.hostToken) &&
+      /^[a-f0-9]{64}$/.test(room.displayToken) &&
+      Number.isFinite(room.expiresAt) &&
+      room.expiresAt > Date.now()
+    );
+  }
+
+  async function regenerateRoom() {
+    if (creatingRoom.value) return false;
+    creatingRoom.value = true;
+    creationError.value = "";
+    try {
+      const endpoint = `${realtimeUrl.replace(/^ws/, "http").replace(/\/$/, "")}/rooms`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Room creation failed");
+      const room: unknown = await response.json();
+      if (!validRoom(room)) throw new Error("Invalid room response");
+      if (isUnmounted) return false;
+      // Credentials stay in this host tab; invitations and QR codes contain only
+      // the public room ID. Storage failure must not prevent using a new room.
+      try {
+        sessionStorage.setItem(hostStorageKey, JSON.stringify(room));
+      } catch {}
+      adoptRoom(room);
+      return true;
+    } catch {
+      creationError.value =
+        "Could not create a room. Check your connection and try again.";
+      return false;
+    } finally {
+      creatingRoom.value = false;
+    }
   }
 
   async function copyInvitation(kind: "code" | "link") {
@@ -94,7 +146,17 @@
   }
 
   onMounted(() => {
-    regenerateRoom();
+    let restored = false;
+    try {
+      const saved: unknown = JSON.parse(
+        sessionStorage.getItem(hostStorageKey) ?? "null",
+      );
+      if (validRoom(saved)) {
+        adoptRoom(saved);
+        restored = true;
+      }
+    } catch {}
+    if (!restored) void regenerateRoom();
     pollTimer = setInterval(() => {
       pollNow.value = Date.now();
     }, 250);
@@ -124,8 +186,6 @@
 
     connection.addEventListener("open", () => {
       if (socket.value !== connection) return;
-      reconnectAttempt = 0;
-      presenceState.value = "connected";
       sendJoinRoom(connection);
       startPresenceRefreshTimer(connection);
     });
@@ -137,7 +197,30 @@
           type?: string;
           connected?: number;
           poll?: typeof poll.value;
+          code?: string;
+          message?: string;
         };
+        if (message.type === "room-ready") {
+          reconnectAttempt = 0;
+          presenceState.value = "connected";
+        }
+        if (message.type === "protocol-error") {
+          pollError.value =
+            message.message ?? "The room could not process this action.";
+          if (
+            ["unauthorized", "room_expired", "invalid_room"].includes(
+              message.code ?? "",
+            )
+          ) {
+            authenticationFailed = true;
+            hostError.value = pollError.value;
+            presenceState.value = "error";
+            try {
+              sessionStorage.removeItem(hostStorageKey);
+            } catch {}
+            closePresenceSocket();
+          }
+        }
         if (
           message.type === "presence" &&
           typeof message.connected === "number"
@@ -182,6 +265,7 @@
         type: "join-room",
         roomId: roomId.value,
         clientType: "host",
+        hostToken: hostToken.value,
       }),
     );
   }
@@ -267,7 +351,7 @@
   }
 
   async function createNewRoom() {
-    regenerateRoom();
+    if (!(await regenerateRoom())) return;
     confirmNewRoom.value = false;
     await nextTick();
     newRoomButton.value?.focus();
@@ -338,7 +422,8 @@
   }
 
   function scheduleReconnect() {
-    if (isUnmounted || reconnectTimer || !roomId.value) return;
+    if (isUnmounted || authenticationFailed || reconnectTimer || !roomId.value)
+      return;
 
     const delay =
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)];
@@ -367,10 +452,11 @@
 
   const appRoomUrl = computed(() => {
     if (!roomId.value) return "";
-    return `peanutgallery://room/${encodeURIComponent(roomId.value)}`;
+    return `peanutgallery://room/${encodeURIComponent(roomId.value)}?displayToken=${encodeURIComponent(displayToken.value)}`;
   });
 
   const connectedCountLabel = computed(() => {
+    if (hostError.value) return "Room access unavailable";
     if (presenceState.value !== "connected") {
       return presenceState.value === "connecting"
         ? reconnectAttempt
@@ -392,7 +478,25 @@
       <h1 class="page-heading">Your room is ready.</h1>
       <p>Share the invitation. Watch the reactions roll in.</p>
     </header>
-    <div class="host-workspace" :class="{ 'with-poll': showPoll }">
+    <div v-if="creationError || hostError" class="room-creation-error">
+      <p class="error" role="alert">{{ creationError || hostError }}</p>
+      <button
+        class="button secondary"
+        type="button"
+        :disabled="creatingRoom"
+        @click="regenerateRoom"
+      >
+        {{ creatingRoom ? "Creating…" : "Create a new room" }}
+      </button>
+    </div>
+    <p v-if="!roomId && creatingRoom" role="status" class="room-creation-error">
+      Creating your room…
+    </p>
+    <div
+      v-if="roomId"
+      class="host-workspace"
+      :class="{ 'with-poll': showPoll }"
+    >
       <div class="sharing-column">
         <div class="share-card">
           <div class="share-top">
@@ -514,7 +618,12 @@
                 @click="cancelNewRoom"
               >
                 Keep this room</button
-              ><button class="button" type="button" @click="createNewRoom">
+              ><button
+                class="button"
+                type="button"
+                :disabled="creatingRoom"
+                @click="createNewRoom"
+              >
                 Create new room
               </button>
             </div>
@@ -669,6 +778,13 @@
 </template>
 
 <style scoped>
+  .room-creation-error {
+    display: grid;
+    justify-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
   .host-page {
     width: 100%;
   }

@@ -17,10 +17,19 @@ importers:
       '@peanut-gallery/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      emoji-regex:
+        specifier: 10.6.0
+        version: 10.6.0
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260724.1
         version: 5.20260724.1
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
+      miniflare:
+        specifier: 4.20260722.0
+        version: 4.20260722.0
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
@@ -30,9 +39,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@fingerprintjs/fingerprintjs':
-        specifier: ^5.2.0
-        version: 5.2.0
       cuelume:
         specifier: ^0.1.2
         version: 0.1.2
@@ -511,9 +517,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@fingerprintjs/fingerprintjs@5.2.0':
-    resolution: {integrity: sha512-j+2nInkwCQNTJcNhOjvkGM/nLRTuGJTC6xai4quqvUpjob2ssrGwBZjS7k55nOmKvge7qvJT2nS3i/IRvQSTQA==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -4629,8 +4632,6 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
-
-  '@fingerprintjs/fingerprintjs@5.2.0': {}
 
   '@img/colour@1.1.0': {}
 

@@ -79,11 +79,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleDeepLink(_ url: URL) {
         guard url.scheme?.lowercased() == Self.appURLScheme,
               url.host?.lowercased() == "room",
-              let room = url.pathComponents.dropFirst().first,
-              room.count > 0,
-              room.count <= 32 else { return }
-
-        connect(to: room.uppercased())
+              url.pathComponents.count == 2,
+              let rawRoom = url.pathComponents.dropFirst().first,
+              let room = RoomCode.normalized(rawRoom) else { return }
+        let tokens = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.filter { $0.name == "displayToken" } ?? []
+        guard tokens.count <= 1 else { return }
+        var displayToken: String?
+        if let item = tokens.first {
+            guard let token = item.value, token.count == 64,
+                  token.allSatisfy({ "0123456789abcdef".contains($0) }),
+                  RealtimeSettings.resolvedURL != nil else { return }
+            displayToken = token
+        }
+        connect(to: room, displayToken: displayToken)
         NSApp.activate(ignoringOtherApps: true)
         overlayController?.show()
         leaderboardController?.show()
@@ -225,12 +233,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Connection
 
-    private func connect(to room: String) {
+    private func connect(to room: String, displayToken suppliedToken: String? = nil) {
         UserDefaults.standard.set(room, forKey: DefaultsKey.room)
         UserDefaults.standard.set(true, forKey: DefaultsKey.autoConnect)
         updateRoomMenuItem(room)
         settingsController?.update(room: room)
-        socket.connect(room: room)
+        let displayToken = suppliedToken ?? RealtimeSettings.resolvedURL.flatMap { DisplayCredentialStore.load(room: room, server: $0) }
+        socket.connect(room: room, displayToken: displayToken)
     }
 
     /// Stops the socket but keeps the room, so rejoining is one click.
@@ -301,6 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .reconnecting: connectionMenuItem?.title = "Connection: Reconnecting…"
         case .disconnected: connectionMenuItem?.title = "Connection: Disconnected"
         case .unconfigured: connectionMenuItem?.title = "Connection: No server configured"
+        case .accessDenied: connectionMenuItem?.title = "Connection: Access denied — open a fresh host link"
         }
         settingsController?.update(connection: state)
         updateStatusIcon(active: overlayController.isVisible)
@@ -333,7 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch connectionState {
         case .connected: color = .systemGreen
         case .connecting, .reconnecting: color = .systemOrange
-        case .disconnected: color = .systemRed
+        case .disconnected, .accessDenied: color = .systemRed
         case .unconfigured: color = .systemGray
         }
         statusItem.button?.image = nil
